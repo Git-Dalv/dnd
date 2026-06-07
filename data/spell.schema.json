@@ -1,0 +1,57 @@
+{
+  "_comment": "ШАБЛОН записи заклинания в каталоге (data/srd/spells.json, data/homebrew/spells.json). Каталог хранит МЕХАНИКУ, не зависящую от персонажа. Принцип CLAUDE.md: одни данные — одно представление; броски считает сервер. ВАЖНО: в каталоге у rolls[] НЕТ поля modifier, а у save dc=null — это персонаж-зависимые величины, они подставляются при СБОРКЕ действия персонажа (см. character-actions.schema.json). Машинные коды (action/evocation/dex/fire) — на англ., человекочитаемый текст — в парных *Local-полях.",
+  "_comment_codes": "Поля без Local — машинные коды для логики (фильтры, иконки, правила). Поля с Local — то, что видит игрок (RU). Меняем перевод — правим только *Local, логика не ломается.",
+
+  "id": "spell_fireball",
+  "name": "Fireball",
+  "nameLocal": "Огненный шар",
+  "kind": "spell",
+
+  "_comment_level": "Уровень заклинания: 0 = заговор (cantrip), 1..9 — круги.",
+  "level": 3,
+
+  "_comment_school": "school — машинный код школы магии (abjuration|conjuration|divination|enchantment|evocation|illusion|necromancy|transmutation). schoolLocal — отображаемое имя.",
+  "school": "evocation",
+  "schoolLocal": "Воплощение",
+
+  "_comment_castingTime": "Время накладывания. castingTime — код (action|bonus|reaction|minute|hour|ritual). castingTimeLocal — текст («1 действие», «1 реакция»).",
+  "castingTime": "action",
+  "castingTimeLocal": "1 действие",
+
+  "_comment_range": "Дистанция. range — код/значение в футах или ключ (self|touch|sight|unlimited). rangeLocal — текст («150 футов»).",
+  "range": "150",
+  "rangeLocal": "150 футов",
+
+  "_comment_duration": "Длительность. duration — код (instantaneous|concentration|permanent|round|minute|hour). durationLocal — текст («Мгновенная», «Концентрация, до 1 минуты»).",
+  "duration": "instantaneous",
+  "durationLocal": "Мгновенная",
+
+  "_comment_components": "Компоненты. v/s — вербальный/соматический (bool). m — есть ли материальный компонент (bool). materialLocal — описание материала (null, если m=false).",
+  "components": { "v": true, "s": true, "m": true, "materialLocal": "крошечный шарик из гуано летучей мыши и серы" },
+
+  "_comment_flags": "concentration — требует концентрации (bool). ritual — можно как ритуал (bool).",
+  "concentration": false,
+  "ritual": false,
+
+  "_comment_save": "Спасбросок цели. null — заклинание не требует спасброска. Иначе { ability, dc }, где ability — код характеристики (str|dex|con|int|wis|cha), а dc=null ВСЕГДА в каталоге: DC зависит от заклинателя и подставляется при сборке (8 + бонус мастерства + мод. заклинательной характеристики).",
+  "save": { "ability": "dex", "dc": null },
+
+  "_comment_rolls": "Броски заклинания в УНИВЕРСАЛЬНОЙ форме { label, notation, type, ... }. БЕЗ поля modifier — он зависит от персонажа (бонус атаки, заклинательная характеристика) и добавляется при сборке. type: attack|damage|heal|check. У урона указывается damageType (код, англ.). rolls=[] допустимо — у заклинания может не быть бросков (например, чистый спасбросок или утилитарное).",
+  "rolls": [
+    { "label": "Damage", "notation": "8d6", "type": "damage", "damageType": "fire" }
+  ],
+
+  "_comment_scaling": "Как заклинание усиливается. type: none|slot|level. rule — машинное правило усиления (например, addDicePerSlot). die — добавляемая кость на ступень (например, '1d6'). Для cantrip type обычно 'level' (рост по уровню персонажа), для обычных — 'slot' (по уровню ячейки).",
+  "scaling": { "type": "slot", "rule": "addDicePerSlotAboveBase", "die": "1d6" },
+
+  "_comment_cost": "Чем оплачивается. null — бесплатно (например, заговор не тратит ячейку). Иначе { resource, slotLevel, amount }: resource — код ресурса (spellSlot|custom...), slotLevel — минимальный круг ячейки, amount — сколько единиц ресурса. В каталоге это БАЗОВАЯ стоимость; фактическую ячейку выбирает игрок при касте.",
+  "cost": { "resource": "spellSlot", "slotLevel": 3, "amount": 1 },
+
+  "_comment_baseSlotLevel": "Базовый круг ячейки, на котором заклинание задумано (для scaling считается превышение над ним). У заговоров 0.",
+  "baseSlotLevel": 3,
+
+  "_comment_source": "Происхождение записи: 'SRD' — из 5e-SRD под OGL, 'HB' — homebrew. Определяет правовой статус и папку.",
+  "source": "SRD",
+
+  "description": "Яркая вспышка пламени вырывается из точки в пределах дистанции и взрывается. Каждое существо в сфере радиусом 20 футов делает спасбросок Ловкости."
+}

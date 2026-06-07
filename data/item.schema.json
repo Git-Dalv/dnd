@@ -1,0 +1,45 @@
+{
+  "_comment": "ШАБЛОН записи предмета в каталоге (data/srd/items.json, data/homebrew/items.json). Каталог хранит МЕХАНИКУ предмета, не зависящую от персонажа. Принцип CLAUDE.md: одни данные — одно представление; броски считает сервер. ВАЖНО: rolls внутри weapon — БЕЗ поля modifier (бонус атаки/урона зависит от персонажа и подставляется при сборке, см. character-actions.schema.json). Машинные коды — на англ., отображаемый текст — в парных *Local-полях.",
+  "_comment_codes": "Поля без Local — машинные коды для логики. Поля с Local — то, что видит игрок (RU).",
+
+  "id": "item_longsword",
+  "name": "Longsword",
+  "nameLocal": "Длинный меч",
+  "kind": "item",
+
+  "_comment_type": "Категория предмета. type — машинный код (weapon|armor|shield|consumable|gear|wondrous|tool). typeLocal — отображаемое имя категории. От type зависит, какой подобъект ниже заполнен.",
+  "type": "weapon",
+  "typeLocal": "Оружие",
+
+  "_comment_subobjects": "Подобъекты weapon/armor/consumable/magic. Заполняется ТОЛЬКО релевантный type, остальные = null. magic заполняется дополнительно, если предмет магический (может сочетаться с любым type).",
+
+  "_comment_weapon": "Заполняется при type=weapon (для type=shield не используется). category — код (simple|martial). properties — массив машинных кодов свойств (finesse|versatile|two-handed|light|heavy|reach|thrown|ammunition). propertiesLocal — их отображаемые имена. rolls — броски оружия в УНИВЕРСАЛЬНОЙ форме БЕЗ modifier (зависит от персонажа): обычно один damage; для versatile/thrown можно несколько вариантов через label. type у броска: attack|damage. damageType — код типа урона (англ.).",
+  "weapon": {
+    "category": "martial",
+    "properties": ["versatile"],
+    "propertiesLocal": ["Универсальное (1d10)"],
+    "rolls": [
+      { "label": "Damage", "notation": "1d8", "type": "damage", "damageType": "slashing" }
+    ]
+  },
+
+  "_comment_armor": "Заполняется при type=armor или type=shield, иначе null. baseAc — базовый КД (для доспеха) или бонус КД (для щита, например +2). category — код (light|medium|heavy|shield). dexMax — макс. учитываемый модификатор Ловкости (null = без ограничения, 0 = не учитывается). strReq — требование Силы (null если нет). stealthDisadvantage — помеха Скрытности (bool).",
+  "armor": null,
+
+  "_comment_consumable": "Заполняется при type=consumable (зелья, свитки), иначе null. uses — количество применений. rolls — эффект в универсальной форме БЕЗ modifier (например, лечение 2d4+2 — но +2 как фиксированный бонус предмета хранится в notation/отдельно, НЕ как персонаж-зависимый modifier). onUse — машинный код эффекта (heal|damage|buff|custom).",
+  "consumable": null,
+
+  "_comment_magic": "Магические свойства (если предмет магический), иначе null. rarity — код (common|uncommon|rare|very-rare|legendary|artifact). rarityLocal — отображаемая редкость. attunement — требует настройки (bool). bonus — числовой бонус (например, +1 к КД/атаке/урону у '+1'-предметов; зависит от предмета, НЕ от персонажа). charges — { current, max, resetsOn } или null.",
+  "magic": null,
+
+  "_comment_weight": "Вес в фунтах (число).",
+  "weight": 3,
+
+  "_comment_value": "Стоимость. { amount, currency }, где currency — код монеты (cp|sp|ep|gp|pp).",
+  "value": { "amount": 15, "currency": "gp" },
+
+  "_comment_source": "Происхождение записи: 'SRD' — из 5e-SRD под OGL, 'HB' — homebrew.",
+  "source": "SRD",
+
+  "description": "Универсальное древковое оружие ближнего боя. При использовании двумя руками урон 1d10."
+}
