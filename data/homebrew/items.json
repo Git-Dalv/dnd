@@ -1,1 +1,32 @@
-[]
+[
+  {
+    "id": "item_necromancer_dagger",
+    "name": "Necromancer's Dagger",
+    "nameLocal": "Кинжал Некроманта",
+    "kind": "item",
+    "type": "weapon",
+    "typeLocal": "Оружие",
+    "weapon": {
+      "category": "simple",
+      "properties": ["finesse", "light"],
+      "propertiesLocal": ["Фехтовальное", "Лёгкое"],
+      "rolls": [
+        { "label": "Damage", "notation": "1d4", "type": "damage", "damageType": "piercing" },
+        { "label": "Necrotic", "notation": "1d4", "type": "damage", "damageType": "necrotic" }
+      ]
+    },
+    "armor": null,
+    "consumable": null,
+    "magic": {
+      "rarity": "uncommon",
+      "rarityLocal": "Необычный",
+      "attunement": true,
+      "bonus": 1,
+      "charges": null
+    },
+    "weight": 1,
+    "value": { "amount": 500, "currency": "gp" },
+    "source": "HB",
+    "description": "Почерневший клинок, пульсирующий могильным холодом. Даёт +1 к броскам атаки и урона (магический бонус) и наносит дополнительный некротический урон. Требует настройки."
+  }
+]
