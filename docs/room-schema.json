@@ -1,0 +1,34 @@
+{
+  "_comment": "Состояние игровой комнаты. Сервер хранит ПОЛНУЮ версию, игрокам рассылает урезанную (без hidden-токенов и нераскрытого тумана). Координаты токенов — в клетках.",
+  "roomId": "room_dragonheist",
+  "name": "Waterdeep: Dragon Heist",
+  "gmId": "player_vlad",
+  "members": [
+    { "id": "player_vlad", "name": "Vlad", "role": "gm", "connected": true },
+    { "id": "player_dana", "name": "Dana", "role": "player", "charId": "char_a1b2", "connected": true },
+    { "id": "player_max", "name": "Max", "role": "player", "charId": "char_c3d4", "connected": false }
+  ],
+  "activeSceneId": "scene_tavern",
+  "scenes": [
+    {
+      "id": "scene_tavern",
+      "name": "Yawning Portal",
+      "map": "assets/maps/tavern.jpg",
+      "grid": { "size": 70, "type": "square", "offsetX": 0, "offsetY": 0 },
+      "tokens": [
+        { "id": "tok_dana", "charId": "char_a1b2", "name": "Лиэндра", "img": "assets/tokens/leandra.png",
+          "x": 5, "y": 8, "size": 1, "ownerId": "player_dana",
+          "hpBar": { "current": 22, "max": 27 }, "conditions": ["concentration"] },
+        { "id": "tok_goblin1", "name": "Goblin", "img": "assets/tokens/goblin.png",
+          "x": 9, "y": 6, "size": 1, "ownerId": "player_vlad", "hidden": true }
+      ],
+      "fog": { "enabled": true, "revealed": [[4,7],[5,7],[5,8]] }
+    }
+  ],
+  "combat": { "active": false, "round": 0, "turnIndex": 0, "order": [] },
+  "audio": {
+    "music": { "track": null, "playing": false, "loop": true, "volume": 0.6 },
+    "ambience": { "track": null, "playing": false, "loop": true, "volume": 0.4 }
+  },
+  "log": []
+}

@@ -1,0 +1,51 @@
+{
+  "_comment": "Модель карточки персонажа. Одни данные — два представления (полный лист «Карточка» + выжимка «Персонаж»). Объект roll универсален для навыков/атак/урона.",
+  "id": "char_a1b2",
+  "name": "Лиэндра",
+  "system": "dnd5e",
+  "meta": {
+    "class": "Wizard",
+    "level": 5,
+    "race": "High Elf",
+    "avatar": "assets/leandra.png",
+    "owner": "player_vlad"
+  },
+  "abilities": { "str": 8, "dex": 14, "con": 13, "int": 18, "wis": 12, "cha": 10 },
+  "proficiencyBonus": 3,
+  "derived": {
+    "ac": 13,
+    "hp": { "current": 22, "max": 27, "temp": 0 },
+    "speed": 30,
+    "initiative": 2
+  },
+  "skills": [
+    { "id": "skill_arcana", "name": "Arcana", "ability": "int", "proficient": true,
+      "roll": { "notation": "1d20", "modifier": 7, "type": "check" } },
+    { "id": "skill_stealth", "name": "Stealth", "ability": "dex", "proficient": false,
+      "roll": { "notation": "1d20", "modifier": 2, "type": "check" } }
+  ],
+  "actions": [
+    { "id": "act_firebolt", "name": "Fire Bolt", "icon": "assets/icons/firebolt.png",
+      "kind": "spell", "level": 0, "cost": null, "description": "Снаряд огня по одной цели.",
+      "rolls": [
+        { "label": "Attack", "notation": "1d20", "modifier": 7, "type": "attack" },
+        { "label": "Damage", "notation": "2d10", "modifier": 0, "type": "damage", "damageType": "fire" }
+      ] },
+    { "id": "act_fireball", "name": "Fireball", "icon": "assets/icons/fireball.png",
+      "kind": "spell", "level": 3,
+      "cost": { "resource": "spellSlot", "slotLevel": 3, "amount": 1 },
+      "save": { "ability": "dex", "dc": 15 },
+      "description": "Взрыв 6d6 огнём, спасбросок Ловкости вдвое.",
+      "rolls": [ { "label": "Damage", "notation": "6d6", "modifier": 0, "type": "damage", "damageType": "fire" } ] }
+  ],
+  "resources": {
+    "spellSlots": {
+      "1": { "current": 4, "max": 4 },
+      "2": { "current": 3, "max": 3 },
+      "3": { "current": 2, "max": 2 }
+    },
+    "custom": [
+      { "id": "res_arcrec", "name": "Arcane Recovery", "current": 1, "max": 1, "resetsOn": "longRest" }
+    ]
+  }
+}

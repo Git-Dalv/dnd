@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VTT — прототип v2</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+
+  :root {
+    --bg: #14110d;
+    --panel: #1f1a13;
+    --panel-2: #2a2319;
+    --edge: #3d3324;
+    --edge-bright: #5a4a30;
+    --ink: #e8ddc7;
+    --ink-dim: #a89878;
+    --gold: #c9a253;
+    --gold-bright: #e8c878;
+    --blood: #8a2e22;
+    --green: #4a7a3a;
+    --shadow: rgba(0,0,0,.55);
+    --nav-w: 150px;
+    --party-w: 250px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Spectral', serif;
+    background: var(--bg); color: var(--ink);
+    height: 100vh; overflow: hidden;
+    background-image:
+      radial-gradient(circle at 15% 10%, rgba(201,162,83,.05), transparent 40%),
+      radial-gradient(circle at 90% 90%, rgba(138,46,34,.06), transparent 45%);
+  }
+  .app {
+    display: grid;
+    grid-template-columns: var(--nav-w) 1fr var(--party-w);
+    grid-template-rows: 1fr auto;
+    height: 100vh; gap: 10px; padding: 10px;
+  }
+
+  /* ---------- LEFT NAV ---------- */
+  .nav {
+    grid-row: 1 / 3; grid-column: 1 / 2;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .nav-mode {
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--gold); border-radius: 5px;
+    padding: 9px; text-align: center;
+    font-family: 'Cinzel', serif; font-weight: 600; font-size: 12px;
+    color: var(--gold-bright); letter-spacing: .06em; cursor: pointer;
+    box-shadow: 0 3px 10px var(--shadow);
+  }
+  .nav-tab {
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--edge); border-left: 3px solid transparent;
+    border-radius: 4px; padding: 12px 10px;
+    font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: .04em;
+    color: var(--ink-dim); cursor: pointer; transition: all .15s;
+  }
+  .nav-tab:hover { color: var(--ink); border-left-color: var(--edge-bright); }
+  .nav-tab.active {
+    color: var(--gold-bright); border-left-color: var(--gold);
+    background: linear-gradient(180deg, #322818, var(--panel-2));
+  }
+  .nav-spacer { flex: 1; }
+
+  /* ---------- CENTER STAGE ---------- */
+  .stage {
+    position: relative; grid-row: 1 / 2; grid-column: 2 / 3;
+    border: 2px solid var(--edge); border-radius: 6px; overflow: hidden;
+    background:
+      repeating-linear-gradient(0deg, transparent, transparent 47px, rgba(201,162,83,.07) 47px, rgba(201,162,83,.07) 48px),
+      repeating-linear-gradient(90deg, transparent, transparent 47px, rgba(201,162,83,.07) 47px, rgba(201,162,83,.07) 48px),
+      radial-gradient(ellipse at 45% 40%, #2c2519, #16130d 80%);
+    box-shadow: inset 0 0 80px rgba(0,0,0,.6);
+  }
+  .map-label { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    font-family: 'Cinzel'; font-size: 12px; letter-spacing: .15em; color: var(--ink-dim); text-transform: uppercase; }
+  .grid-hint { position: absolute; bottom: 14px; right: 16px; font-size: 11px; color: var(--ink-dim);
+    font-style: italic; background: rgba(20,17,13,.7); padding: 3px 8px; border-radius: 3px; }
+  .token { position: absolute; width: 44px; height: 44px; border-radius: 50%;
+    border: 2px solid var(--gold); background: radial-gradient(circle at 35% 30%, #4a6b8a, #20323f);
+    display: flex; align-items: center; justify-content: center; font-size: 9px; text-align: center;
+    font-weight: 600; color: var(--ink); box-shadow: 0 3px 8px rgba(0,0,0,.6), 0 0 0 3px rgba(0,0,0,.3); cursor: grab; }
+  .token.enemy { border-color: var(--blood); background: radial-gradient(circle at 35% 30%, #7a3a2e, #3a1810); }
+
+  /* alt panels in center (Карточка/Дневник) */
+  .sheet, .journal {
+    position: absolute; inset: 0; padding: 24px 30px; overflow-y: auto; display: none;
+    background: radial-gradient(ellipse at 50% 0%, #221c14, #16130d);
+  }
+  .sheet.show, .journal.show { display: block; }
+  .sheet h2, .journal h2 { font-family: 'Cinzel'; color: var(--gold-bright); font-size: 18px;
+    letter-spacing: .08em; margin-bottom: 16px; border-bottom: 1px solid var(--edge); padding-bottom: 8px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 20px; }
+  .stat-box { background: var(--panel); border: 1px solid var(--edge); border-radius: 5px;
+    padding: 10px; text-align: center; }
+  .stat-box .lbl { font-size: 10px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: .08em; }
+  .stat-box .val { font-family: 'Cinzel'; font-size: 22px; color: var(--ink); }
+  .stat-box .mod { font-size: 12px; color: var(--gold); }
+  .sheet-row { display: flex; gap: 24px; font-size: 14px; color: var(--ink-dim); margin-bottom: 8px; }
+  .sheet-row b { color: var(--ink); font-family: 'Cinzel'; font-weight: 600; }
+  .journal p { color: var(--ink-dim); line-height: 1.7; font-size: 14px; margin-bottom: 12px; }
+  .journal p::first-letter { color: var(--gold); font-family: 'Cinzel'; font-size: 18px; }
+
+  /* ---------- RIGHT PARTY ---------- */
+  .party { grid-row: 1 / 3; grid-column: 3 / 4; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+  .video-card {
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--edge); border-radius: 6px; overflow: hidden; box-shadow: 0 2px 6px var(--shadow);
+  }
+  .video-card.dm { border-color: var(--gold); }
+  .vc-head { display: flex; align-items: center; gap: 6px; padding: 6px 9px; font-size: 12px;
+    font-family: 'Cinzel'; letter-spacing: .03em; }
+  .vc-role { font-size: 9px; color: var(--gold); letter-spacing: .1em; text-transform: uppercase; }
+  .vc-conn { width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+    box-shadow: 0 0 5px var(--green); margin-left: auto; }
+  .vc-conn.off { background: #555; box-shadow: none; }
+  /* live video feed (заглушка) */
+  .vc-video { height: 78px; background:
+      repeating-linear-gradient(45deg, #1a2530, #1a2530 6px, #1d2a36 6px, #1d2a36 12px);
+    display: flex; align-items: center; justify-content: center; position: relative; }
+  .vc-video::after { content: '🎥 видео игрока'; font-size: 10px; color: #6a8aa0; font-style: italic; }
+  .vc-portrait-row { display: flex; gap: 8px; padding: 8px; align-items: center;
+    border-top: 1px solid var(--edge); }
+  .vc-portrait { width: 38px; height: 38px; border-radius: 4px; flex-shrink: 0;
+    background: radial-gradient(circle at 40% 35%, #5a3a6a, #261830); border: 1px solid var(--edge-bright); }
+  .vc-portrait.warrior { background: radial-gradient(circle at 40% 35%, #6a4a2a, #2a1c10); }
+  .vc-portrait.ranger { background: radial-gradient(circle at 40% 35%, #2a5a3a, #103018); }
+  .vc-hp { flex: 1; }
+  .vc-hp-bar { height: 5px; border-radius: 3px; background: #2a1410; overflow: hidden; margin-top: 4px; }
+  .vc-hp-fill { height: 100%; background: linear-gradient(90deg, #6a2a1a, var(--blood)); }
+  .vc-hp-num { font-size: 10px; color: var(--ink-dim); }
+
+  /* requests to DM */
+  .requests { background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--blood); border-radius: 6px; padding: 9px; box-shadow: 0 2px 6px var(--shadow); }
+  .requests h3 { font-family: 'Cinzel'; font-size: 11px; letter-spacing: .08em; color: #d98a7a;
+    text-transform: uppercase; margin-bottom: 8px; }
+  .req-btn { display: block; width: 100%; text-align: left; background: #261c14;
+    border: 1px solid var(--edge-bright); border-radius: 4px; color: var(--ink-dim);
+    font-family: 'Spectral'; font-size: 12px; padding: 7px 9px; margin-bottom: 5px; cursor: pointer; transition: all .15s; }
+  .req-btn:hover { color: var(--ink); border-color: var(--gold); background: #322618; }
+  .req-btn:last-child { margin-bottom: 0; }
+
+  /* ---------- HOTBAR ---------- */
+  .hotbar { grid-row: 2 / 3; grid-column: 2 / 3; display: flex; flex-direction: column; gap: 0;
+    background: linear-gradient(180deg, var(--panel), #17130d); border: 1px solid var(--edge-bright);
+    border-radius: 6px; box-shadow: 0 4px 18px var(--shadow); overflow: hidden; }
+  .hb-tabs { display: flex; border-bottom: 1px solid var(--edge); }
+  .hb-tab { padding: 7px 16px; font-family: 'Cinzel'; font-size: 11px; letter-spacing: .05em;
+    color: var(--ink-dim); cursor: pointer; border-right: 1px solid var(--edge); transition: all .15s; }
+  .hb-tab:hover { color: var(--ink); }
+  .hb-tab.active { color: var(--gold-bright); background: rgba(201,162,83,.1); }
+  .hb-body { display: flex; align-items: stretch; gap: 12px; padding: 10px 14px; }
+  .hp-orb { width: 70px; height: 70px; border-radius: 50%; flex-shrink: 0;
+    background: radial-gradient(circle at 35% 30%, #b03828, #5a160e 70%, #2a0a06);
+    border: 2px solid var(--gold); display: flex; flex-direction: column; align-items: center;
+    justify-content: center; box-shadow: 0 0 16px rgba(138,46,34,.4), inset 0 -8px 14px rgba(0,0,0,.5); }
+  .hp-orb .hp-val { font-family: 'Cinzel'; font-weight: 700; font-size: 17px; color: #fff; }
+  .hp-orb .hp-max { font-size: 10px; color: #e8c0b0; }
+  .hb-content { flex: 1; display: flex; align-items: center; }
+  .action-icons { display: flex; gap: 7px; flex-wrap: wrap; }
+  .act { width: 44px; height: 44px; border-radius: 5px;
+    background: linear-gradient(160deg, var(--panel-2), #181309); border: 1px solid var(--edge-bright);
+    display: flex; align-items: center; justify-content: center; font-size: 19px; cursor: pointer;
+    transition: transform .12s, border-color .12s, box-shadow .12s; }
+  .act:hover { transform: translateY(-3px); border-color: var(--gold); box-shadow: 0 4px 12px rgba(201,162,83,.3); }
+  .hb-text { color: var(--ink-dim); font-size: 13px; display: flex; gap: 28px; flex-wrap: wrap; }
+  .hb-text b { color: var(--ink); font-family: 'Cinzel'; font-weight: 600; }
+  .slots { flex-shrink: 0; display: flex; flex-direction: column; gap: 5px; padding-left: 12px;
+    border-left: 1px solid var(--edge); justify-content: center; }
+  .slots-label { font-family: 'Cinzel'; font-size: 9px; letter-spacing: .1em; color: var(--ink-dim); text-transform: uppercase; }
+  .slot-row { display: flex; gap: 5px; align-items: center; }
+  .slot-lvl { font-size: 10px; color: var(--ink-dim); width: 12px; font-family: 'Cinzel'; }
+  .pip { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--edge-bright);
+    background: radial-gradient(circle at 35% 30%, var(--gold-bright), #6a4a18); cursor: pointer; }
+  .pip.spent { background: #1a150d; box-shadow: inset 0 0 4px #000; }
+
+  /* GM modal for incoming request */
+  .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none;
+    align-items: center; justify-content: center; z-index: 100; }
+  .modal-back.show { display: flex; }
+  .modal { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--gold);
+    border-radius: 8px; padding: 20px 24px; width: 380px; box-shadow: 0 12px 40px rgba(0,0,0,.8); }
+  .modal h3 { font-family: 'Cinzel'; color: var(--gold-bright); font-size: 14px; margin-bottom: 6px; }
+  .modal p { color: var(--ink-dim); font-size: 13px; margin-bottom: 14px; }
+  .modal p b { color: var(--ink); }
+  .aud-label { font-size: 11px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
+  .aud-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .aud-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink);
+    background: #241c14; border: 1px solid var(--edge); border-radius: 4px; padding: 7px 10px; cursor: pointer; }
+  .aud-item input { accent-color: var(--gold); }
+  .aud-item.checked { border-color: var(--gold); background: #322618; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .modal-actions button { font-family: 'Cinzel'; font-size: 12px; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+  .btn-primary { background: var(--gold); color: #1a140a; border: none; }
+  .btn-ghost { background: transparent; color: var(--ink-dim); border: 1px solid var(--edge-bright); }
+
+  /* sim controls */
+  .sim { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 90; display: flex; gap: 8px; }
+  .sim button { background: #241c12; color: var(--ink-dim); border: 1px dashed var(--edge-bright);
+    border-radius: 4px; font-family: 'Spectral'; font-size: 11px; font-style: italic; padding: 6px 10px; cursor: pointer; }
+  .sim button:hover { color: var(--gold-bright); border-color: var(--gold); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- LEFT NAV -->
+  <div class="nav">
+    <div class="nav-mode" id="modeChip">Режим: Исследование</div>
+    <div class="nav-tab active" data-view="map">Карта</div>
+    <div class="nav-tab" data-view="journal">Дневник</div>
+    <div class="nav-tab" data-view="quests">Задачи</div>
+    <div class="nav-tab" data-view="sheet">Карточка персонажа</div>
+    <div class="nav-spacer"></div>
+  </div>
+
+  <!-- CENTER -->
+  <div class="stage">
+    <!-- map view -->
+    <div id="view-map">
+      <div class="map-label">Двор Зевающего Портала</div>
+      <div class="grid-hint">Сетка · 5 фт / клетка</div>
+      <div class="token" style="left: 160px; top: 320px;">Лиэндра</div>
+      <div class="token" style="left: 280px; top: 260px;">Торин</div>
+      <div class="token enemy" style="left: 460px; top: 180px;">Гоблин</div>
+      <div class="token enemy" style="left: 540px; top: 300px;">Гоблин</div>
+    </div>
+    <!-- sheet view -->
+    <div class="sheet" id="view-sheet">
+      <h2>Лиэндра · Волшебница 5 ур.</h2>
+      <div class="stat-grid">
+        <div class="stat-box"><div class="lbl">Сила</div><div class="val">8</div><div class="mod">−1</div></div>
+        <div class="stat-box"><div class="lbl">Ловк</div><div class="val">14</div><div class="mod">+2</div></div>
+        <div class="stat-box"><div class="lbl">Тело</div><div class="val">13</div><div class="mod">+1</div></div>
+        <div class="stat-box"><div class="lbl">Инт</div><div class="val">18</div><div class="mod">+4</div></div>
+        <div class="stat-box"><div class="lbl">Мудр</div><div class="val">12</div><div class="mod">+1</div></div>
+        <div class="stat-box"><div class="lbl">Хар</div><div class="val">10</div><div class="mod">+0</div></div>
+      </div>
+      <div class="sheet-row"><span><b>КД:</b> 13</span><span><b>Скорость:</b> 30 фт</span><span><b>Бонус мастерства:</b> +3</span><span><b>Инициатива:</b> +2</span></div>
+      <div class="sheet-row"><b>Спасброски:</b> Инт +7, Мудр +4</div>
+      <div class="sheet-row"><b>Владения:</b> Магия +7, История +7, Расследование +7</div>
+      <div class="sheet-row"><b>Языки:</b> Общий, Эльфийский, Драконий</div>
+      <div class="sheet-row"><b>Снаряжение:</b> Посох, книга заклинаний, мантия архимага, 45 зм</div>
+    </div>
+    <!-- journal view -->
+    <div class="journal" id="view-journal">
+      <h2>Дневник кампании</h2>
+      <p>Зевающий Портал гудел от слухов о пропавшем караване. Трактирщик Дюрнан, протирая кружку, кивнул в сторону угла, где сидел человек в потрёпанном плаще...</p>
+      <p>После драки с гоблинами в переулке мы нашли записку с печатью Ксанатара. Торин уверен, что это ловушка. Сильвана предлагает идти ночью.</p>
+      <p><i>Задача обновлена: выяснить, кто стоит за нападениями в Доках.</i></p>
+    </div>
+    <!-- quests view -->
+    <div class="journal" id="view-quests">
+      <h2>Задачи</h2>
+      <p><b>Активно:</b> Найти пропавший караван · Выследить агента Ксанатара</p>
+      <p><b>Выполнено:</b> Отбиться от засады в переулке</p>
+    </div>
+  </div>
+
+  <!-- RIGHT PARTY -->
+  <div class="party">
+    <div class="video-card dm">
+      <div class="vc-head"><span class="vc-role">Мастер</span> &nbsp;Vlad <span class="vc-conn"></span></div>
+      <div class="vc-video"></div>
+    </div>
+
+    <div class="requests">
+      <h3>⚜ Запросы к DM'у</h3>
+      <button class="req-btn" data-req="Скрытная проверка">🤫 Скрытная проверка</button>
+      <button class="req-btn" data-req="Отойти от группы">🚶 Отойти от группы</button>
+      <button class="req-btn" data-req="Личный вопрос мастеру">💬 Личный вопрос</button>
+    </div>
+
+    <div class="video-card">
+      <div class="vc-head">Лиэндра <span class="vc-conn"></span></div>
+      <div class="vc-video"></div>
+      <div class="vc-portrait-row">
+        <div class="vc-portrait"></div>
+        <div class="vc-hp"><div class="vc-hp-num">22 / 27</div><div class="vc-hp-bar"><div class="vc-hp-fill" style="width:81%"></div></div></div>
+      </div>
+    </div>
+
+    <div class="video-card">
+      <div class="vc-head">Торин <span class="vc-conn"></span></div>
+      <div class="vc-video"></div>
+      <div class="vc-portrait-row">
+        <div class="vc-portrait warrior"></div>
+        <div class="vc-hp"><div class="vc-hp-num">31 / 48</div><div class="vc-hp-bar"><div class="vc-hp-fill" style="width:64%"></div></div></div>
+      </div>
+    </div>
+
+    <div class="video-card">
+      <div class="vc-head">Сильвана <span class="vc-conn off"></span></div>
+      <div class="vc-video"></div>
+      <div class="vc-portrait-row">
+        <div class="vc-portrait ranger"></div>
+        <div class="vc-hp"><div class="vc-hp-num">29 / 29</div><div class="vc-hp-bar"><div class="vc-hp-fill" style="width:100%"></div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HOTBAR -->
+  <div class="hotbar">
+    <div class="hb-tabs">
+      <div class="hb-tab active" data-hb="abilities">Способности</div>
+      <div class="hb-tab" data-hb="char">Персонаж</div>
+      <div class="hb-tab" data-hb="inv">Инвентарь</div>
+    </div>
+    <div class="hb-body">
+      <div class="hp-orb"><div class="hp-val">22</div><div class="hp-max">/ 27</div></div>
+      <div class="hb-content">
+        <!-- abilities -->
+        <div class="action-icons" id="hb-abilities">
+          <div class="act" title="Атака">⚔️</div>
+          <div class="act" title="Огненный снаряд">🔥</div>
+          <div class="act" title="Огненный шар">💥</div>
+          <div class="act" title="Щит">🛡️</div>
+          <div class="act" title="Лечение">✨</div>
+          <div class="act" title="Молния">⚡</div>
+          <div class="act" title="Зелье">🧪</div>
+        </div>
+        <!-- char (выжимка) -->
+        <div class="hb-text" id="hb-char" style="display:none">
+          <span><b>КД</b> 13</span><span><b>Скор</b> 30фт</span><span><b>Иниц</b> +2</span>
+          <span><b>Инт</b> +4</span><span><b>Спас Инт</b> +7</span><span><b>Концентрация:</b> Огн. шар</span>
+        </div>
+        <!-- inventory -->
+        <div class="hb-text" id="hb-inv" style="display:none">
+          <span>📕 Книга заклинаний</span><span>🧪 Зелье лечения ×2</span><span>🗝 Ключ от склада</span><span>💰 45 зм</span>
+        </div>
+      </div>
+      <div class="slots">
+        <div class="slots-label">Ячейки</div>
+        <div class="slot-row"><span class="slot-lvl">1</span><span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="pip spent"></span></div>
+        <div class="slot-row"><span class="slot-lvl">2</span><span class="pip"></span><span class="pip"></span><span class="pip spent"></span></div>
+        <div class="slot-row"><span class="slot-lvl">3</span><span class="pip"></span><span class="pip spent"></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- GM modal -->
+<div class="modal-back" id="modalBack">
+  <div class="modal">
+    <h3>Входящий запрос игрока</h3>
+    <p><b id="reqName">Лиэндра</b> просит: <span id="reqText">Скрытная проверка</span></p>
+    <div class="aud-label">Кто слышит этот разговор?</div>
+    <div class="aud-list">
+      <label class="aud-item checked"><input type="checkbox" checked> Лиэндра (инициатор)</label>
+      <label class="aud-item"><input type="checkbox"> Торин</label>
+      <label class="aud-item"><input type="checkbox"> Сильвана</label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="modalCancel">Отмена</button>
+      <button class="btn-primary" id="modalOpen">Открыть приватный канал</button>
+    </div>
+  </div>
+</div>
+
+<div class="sim">
+  <button id="toggleCombat">▶ начать бой</button>
+</div>
+
+<script>
+  // left nav -> center view switch
+  const views = ['map','journal','quests','sheet'];
+  document.querySelectorAll('.nav-tab').forEach(tab => {
+    tab.onclick = () => {
+      document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const v = tab.dataset.view;
+      views.forEach(name => {
+        const el = document.getElementById('view-' + name);
+        if (!el) return;
+        if (name === 'map') el.style.display = (v === 'map') ? 'block' : 'none';
+        else el.classList.toggle('show', v === name);
+      });
+    };
+  });
+
+  // hotbar tabs
+  const hbViews = { abilities: 'action-icons', char: 'hb-text', inv: 'hb-text' };
+  document.querySelectorAll('.hb-tab').forEach(tab => {
+    tab.onclick = () => {
+      document.querySelectorAll('.hb-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      ['abilities','char','inv'].forEach(k => {
+        document.getElementById('hb-' + k).style.display = (k === tab.dataset.hb) ?
+          (k === 'abilities' ? 'flex' : 'flex') : 'none';
+      });
+    };
+  });
+
+  // mode toggle
+  const modeChip = document.getElementById('modeChip');
+  let inCombat = false;
+  document.getElementById('toggleCombat').onclick = (e) => {
+    inCombat = !inCombat;
+    modeChip.textContent = inCombat ? 'Режим: Бой' : 'Режим: Исследование';
+    modeChip.style.borderColor = inCombat ? 'var(--blood)' : 'var(--gold)';
+    e.target.textContent = inCombat ? '■ закончить бой' : '▶ начать бой';
+  };
+
+  // requests -> GM modal
+  const modalBack = document.getElementById('modalBack');
+  document.querySelectorAll('.req-btn').forEach(b => {
+    b.onclick = () => {
+      document.getElementById('reqText').textContent = b.dataset.req;
+      modalBack.classList.add('show');
+    };
+  });
+  document.getElementById('modalCancel').onclick = () => modalBack.classList.remove('show');
+  document.getElementById('modalOpen').onclick = () => modalBack.classList.remove('show');
+  document.querySelectorAll('.aud-item').forEach(item => {
+    item.onclick = () => setTimeout(() => {
+      const cb = item.querySelector('input');
+      item.classList.toggle('checked', cb.checked);
+    }, 0);
+  });
+
+  // spell pips
+  document.querySelectorAll('.pip').forEach(p => p.onclick = () => p.classList.toggle('spent'));
+</script>
+</body>
+</html>
