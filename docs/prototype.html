@@ -385,6 +385,7 @@
 </div>
 
 <div class="sim">
+  <button id="rollD20">🎲 Бросить d20</button>
   <button id="toggleCombat">▶ начать бой</button>
 </div>
 
@@ -586,6 +587,29 @@
 
   // spell pips
   document.querySelectorAll('.pip').forEach(p => p.onclick = () => p.classList.toggle('spent'));
+
+  // ===================================================================
+  // Намерения броска. КЛИК НЕ МЕНЯЕТ UI: только шлёт dice.roll на сервер.
+  // Журнал обновится позже — из handlers['dice.rolled'], когда сервер
+  // пришлёт посчитанный результат. Локально результат не рисуем.
+  // ===================================================================
+
+  // иконки действий в hotbar -> бросок (временно у всех 1d20)
+  document.querySelectorAll('.act').forEach(act => {
+    act.onclick = () => {
+      net.send({
+        type: 'dice.roll',
+        notation: '1d20',
+        modifier: 0,
+        label: act.getAttribute('title') || '',
+      });
+    };
+  });
+
+  // явная кнопка для проверки среза без привязки к иконкам
+  document.getElementById('rollD20').onclick = () => {
+    net.send({ type: 'dice.roll', notation: '1d20', modifier: 0, label: 'Бросок d20' });
+  };
 </script>
 </body>
 </html>
