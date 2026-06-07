@@ -1,1 +1,70 @@
-[]
+[
+  {
+    "id": "item_dagger",
+    "name": "Dagger",
+    "nameLocal": "Кинжал",
+    "kind": "item",
+    "type": "weapon",
+    "typeLocal": "Оружие",
+    "weapon": {
+      "category": "simple",
+      "properties": ["finesse", "light", "thrown"],
+      "propertiesLocal": ["Фехтовальное", "Лёгкое", "Метательное (20/60)"],
+      "rolls": [
+        { "label": "Damage", "notation": "1d4", "type": "damage", "damageType": "piercing" }
+      ]
+    },
+    "armor": null,
+    "consumable": null,
+    "magic": null,
+    "weight": 1,
+    "value": { "amount": 2, "currency": "gp" },
+    "source": "SRD",
+    "description": "Простое лёгкое клинковое оружие ближнего боя, которое можно метать."
+  },
+  {
+    "id": "item_quarterstaff",
+    "name": "Quarterstaff",
+    "nameLocal": "Боевой посох",
+    "kind": "item",
+    "type": "weapon",
+    "typeLocal": "Оружие",
+    "weapon": {
+      "category": "simple",
+      "properties": ["versatile"],
+      "propertiesLocal": ["Универсальное (1d8)"],
+      "rolls": [
+        { "label": "Damage", "notation": "1d6", "type": "damage", "damageType": "bludgeoning" }
+      ]
+    },
+    "armor": null,
+    "consumable": null,
+    "magic": null,
+    "weight": 4,
+    "value": { "amount": 2, "currency": "sp" },
+    "source": "SRD",
+    "description": "Простое древковое оружие ближнего боя. При использовании двумя руками урон 1d8."
+  },
+  {
+    "id": "item_potion_healing",
+    "name": "Potion of Healing",
+    "nameLocal": "Зелье лечения",
+    "kind": "item",
+    "type": "consumable",
+    "typeLocal": "Расходник",
+    "weapon": null,
+    "armor": null,
+    "consumable": {
+      "uses": 1,
+      "onUse": "heal",
+      "rolls": [
+        { "label": "Heal", "notation": "2d4", "modifier": 2, "type": "heal" }
+      ]
+    },
+    "magic": null,
+    "weight": 0.5,
+    "value": { "amount": 50, "currency": "gp" },
+    "source": "SRD",
+    "description": "Выпивший восстанавливает 2d4+2 хитов бонусным действием. Фиксированный +2 — собственный бонус зелья, не персонажа."
+  }
+]

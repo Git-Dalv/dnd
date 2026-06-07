@@ -1,1 +1,58 @@
-[]
+[
+  {
+    "id": "spell_grasp_grandfather",
+    "name": "Grasp of the Grandfather",
+    "nameLocal": "Рука Деда",
+    "kind": "spell",
+    "level": 1,
+    "school": "necromancy",
+    "schoolLocal": "Некромантия",
+    "castingTime": "action",
+    "castingTimeLocal": "1 действие",
+    "range": "60",
+    "rangeLocal": "60 футов",
+    "duration": "instantaneous",
+    "durationLocal": "Мгновенная",
+    "components": { "v": true, "s": true, "m": false, "materialLocal": null },
+    "concentration": false,
+    "ritual": false,
+    "save": null,
+    "rolls": [
+      { "label": "Attack", "notation": "1d20", "type": "attack" },
+      { "label": "Damage", "notation": "2d8", "type": "damage", "damageType": "necrotic" }
+    ],
+    "scaling": { "type": "slot", "rule": "addDicePerSlotAboveBase", "die": "1d8" },
+    "cost": { "resource": "spellSlot", "slotLevel": 1, "amount": 1 },
+    "baseSlotLevel": 1,
+    "source": "HB",
+    "description": "Иссохшая призрачная рука покойного наставника тянется к цели. Дальнобойная атака заклинанием; при попадании цель получает некротический урон, а Тибальд восстанавливает хиты, равные половине нанесённого урона."
+  },
+  {
+    "id": "spell_summon_grandfather",
+    "name": "Summon the Grandfather",
+    "nameLocal": "Призыв Деда",
+    "kind": "spell",
+    "level": 3,
+    "school": "necromancy",
+    "schoolLocal": "Некромантия",
+    "castingTime": "action",
+    "castingTimeLocal": "1 действие",
+    "range": "30",
+    "rangeLocal": "30 футов",
+    "duration": "concentration",
+    "durationLocal": "Концентрация, до 1 минуты",
+    "components": { "v": true, "s": true, "m": true, "materialLocal": "истлевший медальон предка" },
+    "concentration": true,
+    "ritual": false,
+    "save": null,
+    "rolls": [
+      { "label": "Attack", "notation": "1d20", "type": "attack" },
+      { "label": "Damage", "notation": "3d6", "type": "damage", "damageType": "necrotic" }
+    ],
+    "scaling": { "type": "slot", "rule": "addDicePerSlotAboveBase", "die": "1d6" },
+    "cost": { "resource": "spellSlot", "slotLevel": 3, "amount": 1 },
+    "baseSlotLevel": 3,
+    "source": "HB",
+    "description": "Тибальд призывает дух покойного деда-некроманта. Пока держится концентрация, дух своим действием совершает призрачный удар по выбранной цели (атака заклинанием, некротический урон) и защищает призывателя своим присутствием."
+  }
+]

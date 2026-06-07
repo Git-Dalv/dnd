@@ -24,19 +24,18 @@
     { "id": "skill_stealth", "name": "Stealth", "ability": "dex", "proficient": false,
       "roll": { "notation": "1d20", "modifier": 2, "type": "check" } }
   ],
+  "_comment_actions": "Действия = ссылки на каталог (data/srd, data/homebrew) в форме { ref, overrides }. Механика (notation, тип урона, стоимость) берётся из каталога; здесь только персонаж-зависимое: посчитанный modifier бросков и dc спасброска. У волшебницы Int +4, бонус мастерства +3 → бонус атаки заклинанием +7, DC спасброска 8+3+4=15. Fire Bolt на 5 уровне бьёт 2d10 (override notation), Fireball на ячейке 3 круга — 8d6 из каталога.",
   "actions": [
-    { "id": "act_firebolt", "name": "Fire Bolt", "icon": "assets/icons/firebolt.png",
-      "kind": "spell", "level": 0, "cost": null, "description": "Снаряд огня по одной цели.",
-      "rolls": [
-        { "label": "Attack", "notation": "1d20", "modifier": 7, "type": "attack" },
-        { "label": "Damage", "notation": "2d10", "modifier": 0, "type": "damage", "damageType": "fire" }
-      ] },
-    { "id": "act_fireball", "name": "Fireball", "icon": "assets/icons/fireball.png",
-      "kind": "spell", "level": 3,
-      "cost": { "resource": "spellSlot", "slotLevel": 3, "amount": 1 },
-      "save": { "ability": "dex", "dc": 15 },
-      "description": "Взрыв 6d6 огнём, спасбросок Ловкости вдвое.",
-      "rolls": [ { "label": "Damage", "notation": "6d6", "modifier": 0, "type": "damage", "damageType": "fire" } ] }
+    { "ref": "spell_fire_bolt",
+      "overrides": {
+        "rolls": [
+          { "label": "Attack", "modifier": 7 },
+          { "label": "Damage", "modifier": 0, "notation": "2d10" }
+        ] } },
+    { "ref": "spell_fireball",
+      "overrides": {
+        "rolls": [ { "label": "Damage", "modifier": 0 } ],
+        "save": { "dc": 15 } } }
   ],
   "resources": {
     "spellSlots": {
