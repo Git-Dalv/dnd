@@ -10,10 +10,16 @@ import json
 import random
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI()
+
+# Прототип фронта лежит в docs/. Отдаём его как статику.
+DOCS_DIR = Path(__file__).resolve().parent.parent / "docs"
 
 DICE_RE = re.compile(r"^\s*(\d+)\s*d\s*(\d+)\s*$", re.I)
 
@@ -147,3 +153,14 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
 @app.get("/health")
 def health():
     return {"ok": True, "rooms": len(rooms)}
+
+
+# Корень отдаёт прототип. Регистрируем ПОСЛЕ /ws и /health, чтобы их не перехватить.
+@app.get("/")
+def index():
+    return FileResponse(DOCS_DIR / "prototype.html")
+
+
+# Остальные файлы docs/ (схемы, эскизы) — статикой. Mount на "/" ловит всё,
+# что не совпало с маршрутами выше (включая /ws — он остаётся нетронутым).
+app.mount("/", StaticFiles(directory=DOCS_DIR), name="static")
