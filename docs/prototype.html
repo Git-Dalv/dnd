@@ -367,6 +367,88 @@
 </div>
 
 <script>
+  // ===================================================================
+  // СЛОЙ 1: store — единственное место состояния.
+  // UI читает отсюда, но напрямую НЕ пишет: пишут только handlers.
+  // ===================================================================
+  const store = {
+    members: {},
+    log: [],
+  };
+
+  // ===================================================================
+  // СЛОЙ 2: net — обёртка над WebSocket.
+  // Клиент шлёт намерения через net.send(), факты приходят в net.onMessage.
+  // Параметры подключения берём из query-строки страницы.
+  // ===================================================================
+  const net = (() => {
+    const q = new URLSearchParams(location.search);
+    const room = q.get('room') || 'room_dragonheist';
+    const member = q.get('member') || 'guest';
+    const role = q.get('role') || 'player';
+    const name = q.get('name') || member;
+
+    const api = {
+      room, member, role, name,
+      ws: null,
+      onMessage: null,        // назначается ниже: net.onMessage = fn(msg)
+      send(obj) {
+        if (api.ws && api.ws.readyState === WebSocket.OPEN) {
+          api.ws.send(JSON.stringify(obj));
+        }
+      },
+    };
+
+    function connect() {
+      const url = `ws://${location.host}/ws/${room}/${member}`
+        + `?role=${encodeURIComponent(role)}&name=${encodeURIComponent(name)}`;
+      const ws = new WebSocket(url);
+      api.ws = ws;
+
+      ws.onopen = () => console.log('[net] connected', url);
+      ws.onmessage = (ev) => {
+        let msg;
+        try { msg = JSON.parse(ev.data); }
+        catch (e) { console.warn('[net] bad message', ev.data); return; }
+        if (api.onMessage) api.onMessage(msg);
+      };
+      ws.onclose = () => {
+        console.log('[net] disconnected, retry in 2s');
+        setTimeout(connect, 2000);   // простое переподключение
+      };
+      ws.onerror = (e) => console.warn('[net] error', e);
+    }
+
+    connect();
+    return api;
+  })();
+
+  // ===================================================================
+  // СЛОЙ 3: handlers — реестр обработчиков входящих фактов от сервера.
+  // net.onMessage находит handlers[msg.type] и вызывает его.
+  // ===================================================================
+  const handlers = {
+    // полный хвост журнала при подключении
+    'log.snapshot': (msg) => {
+      store.log = msg.log || [];
+      renderLog();
+    },
+    // новый бросок кубика (результат посчитан сервером)
+    'dice.rolled': (msg) => {
+      store.log.push(msg);
+      renderLog();
+    },
+  };
+
+  net.onMessage = (msg) => {
+    const fn = handlers[msg.type];
+    if (fn) fn(msg);
+    else console.debug('[net] no handler for', msg.type, msg);
+  };
+
+  // Заглушка отрисовки журнала — наполним на следующем шаге.
+  function renderLog() {}
+
   // left nav -> center view switch
   const views = ['map','journal','quests','sheet'];
   document.querySelectorAll('.nav-tab').forEach(tab => {
