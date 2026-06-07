@@ -145,6 +145,22 @@
   .req-btn:hover { color: var(--ink); border-color: var(--gold); background: #322618; }
   .req-btn:last-child { margin-bottom: 0; }
 
+  /* ---------- LOG / журнал бросков ---------- */
+  .log { background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--edge); border-radius: 6px; padding: 9px; box-shadow: 0 2px 6px var(--shadow);
+    display: flex; flex-direction: column; flex: 1; min-height: 120px; }
+  .log h3 { font-family: 'Cinzel'; font-size: 11px; letter-spacing: .08em; color: var(--gold);
+    text-transform: uppercase; margin-bottom: 8px; flex-shrink: 0; }
+  .log-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+  .log-entry { font-family: 'Spectral'; font-size: 12px; color: var(--ink-dim); line-height: 1.4;
+    border-bottom: 1px solid var(--edge); padding-bottom: 5px; }
+  .log-entry:last-child { border-bottom: none; padding-bottom: 0; }
+  .log-by { color: var(--ink); font-weight: 600; }
+  .log-label { color: var(--ink-dim); }
+  .log-dice { color: var(--ink-dim); font-style: italic; }
+  .log-total { color: var(--gold-bright); font-weight: 700; }
+  .log-empty { color: var(--ink-dim); font-style: italic; font-size: 12px; }
+
   /* ---------- HOTBAR ---------- */
   .hotbar { grid-row: 2 / 3; grid-column: 2 / 3; display: flex; flex-direction: column; gap: 0;
     background: linear-gradient(180deg, var(--panel), #17130d); border: 1px solid var(--edge-bright);
@@ -302,6 +318,12 @@
         <div class="vc-hp"><div class="vc-hp-num">29 / 29</div><div class="vc-hp-bar"><div class="vc-hp-fill" style="width:100%"></div></div></div>
       </div>
     </div>
+
+    <!-- LOG / журнал бросков (наполняется из store.log) -->
+    <div class="log">
+      <h3>⚜ Журнал</h3>
+      <div class="log-list" id="logList"></div>
+    </div>
   </div>
 
   <!-- HOTBAR -->
@@ -446,8 +468,65 @@
     else console.debug('[net] no handler for', msg.type, msg);
   };
 
-  // Заглушка отрисовки журнала — наполним на следующем шаге.
-  function renderLog() {}
+  // Полная перерисовка журнала из store.log. Читает ТОЛЬКО store, без аргументов.
+  // Новые записи снизу, после отрисовки — автопрокрутка вниз.
+  function renderLog() {
+    const list = document.getElementById('logList');
+    if (!list) return;
+    list.innerHTML = '';
+
+    if (!store.log.length) {
+      const empty = document.createElement('div');
+      empty.className = 'log-empty';
+      empty.textContent = 'Пока тихо…';
+      list.appendChild(empty);
+      return;
+    }
+
+    for (const e of store.log) {
+      const row = document.createElement('div');
+      row.className = 'log-entry';
+
+      if (e.type === 'dice.rolled') {
+        // "Дана · Скрытность: [14] +2 = 16"
+        const by = document.createElement('span');
+        by.className = 'log-by';
+        by.textContent = e.by || '?';
+        row.appendChild(by);
+
+        if (e.label) {
+          const label = document.createElement('span');
+          label.className = 'log-label';
+          label.textContent = ' · ' + e.label;
+          row.appendChild(label);
+        }
+
+        const rolled = e.rolled || [];
+        const dice = document.createElement('span');
+        dice.className = 'log-dice';
+        // модификатор не приходит отдельно — выводим как (total − сумма костей)
+        const sum = rolled.reduce((a, b) => a + b, 0);
+        const mod = (typeof e.total === 'number') ? e.total - sum : 0;
+        const modStr = mod ? (mod > 0 ? ' +' + mod : ' ' + mod) : '';
+        dice.textContent = ': [' + rolled.join(', ') + ']' + modStr;
+        row.appendChild(dice);
+
+        const total = document.createElement('span');
+        total.className = 'log-total';
+        total.textContent = ' = ' + e.total;
+        row.appendChild(total);
+      } else {
+        // прочие типы пока показываем как есть
+        row.textContent = JSON.stringify(e);
+      }
+
+      list.appendChild(row);
+    }
+
+    list.scrollTop = list.scrollHeight;  // автопрокрутка вниз
+  }
+
+  renderLog();  // первичная отрисовка (пустое состояние)
 
   // left nav -> center view switch
   const views = ['map','journal','quests','sheet'];
