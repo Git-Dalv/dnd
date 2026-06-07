@@ -92,7 +92,8 @@
     font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
   .zoom-ctl button:hover { border-color: var(--gold); }
   .zoom-lvl { font-size: 9px; color: var(--ink-dim); text-align: center; font-family: 'Cinzel'; }
-  .token { position: absolute; width: 44px; height: 44px; border-radius: 50%;
+  /* размер токена = одна клетка (--grid), чтобы он садился в ячейку */
+  .token { position: absolute; width: var(--grid); height: var(--grid); border-radius: 50%;
     border: 2px solid var(--gold); background: radial-gradient(circle at 35% 30%, #4a6b8a, #20323f);
     display: flex; align-items: center; justify-content: center; font-size: 9px; text-align: center;
     font-weight: 600; color: var(--ink); box-shadow: 0 3px 8px rgba(0,0,0,.6), 0 0 0 3px rgba(0,0,0,.3); cursor: grab; }
@@ -304,12 +305,8 @@
       <div class="grid-hint">Сетка · 5 фт / клетка</div>
       <!-- viewport обрезает, world таскается/масштабируется внутри -->
       <div class="map-viewport" id="mapViewport">
-        <div class="map-world" id="mapWorld">
-          <div class="token" style="left: 160px; top: 320px;">Лиэндра</div>
-          <div class="token" style="left: 280px; top: 260px;">Торин</div>
-          <div class="token enemy" style="left: 460px; top: 180px;">Гоблин</div>
-          <div class="token enemy" style="left: 540px; top: 300px;">Гоблин</div>
-        </div>
+        <!-- токены создаёт renderTokens() из mapTokens (клетки -> пиксели) -->
+        <div class="map-world" id="mapWorld"></div>
       </div>
       <div class="zoom-ctl">
         <button id="zoomIn" title="Приблизить">+</button>
@@ -901,6 +898,43 @@
   document.getElementById('rollD20').onclick = () => {
     net.send({ type: 'dice.roll', notation: '1d20', modifier: 0, label: 'Бросок d20' });
   };
+
+  // ===================================================================
+  // Карта — токены в КЛЕТКАХ (CLAUDE.md: токены хранятся в клетках,
+  // пиксель считает клиент). GRID — единый источник истины: та же
+  // переменная --grid, что рисует фоновую сетку, поэтому токен и линии
+  // совпадают при любом зуме.
+  // ВАЖНО: пока это ЛОКАЛЬНЫЙ макет карты, НЕ серверное состояние —
+  // держим в обычной переменной mapTokens, НЕ в store (как пан/зум и
+  // вкладки). Синхронизация token.move/token.moved — отдельным шагом.
+  // ===================================================================
+  const GRID = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--grid')) || 48;
+  const mapTokens = [
+    { id: 'tok_liandra', name: 'Лиэндра', x: 3,  y: 6, enemy: false },
+    { id: 'tok_torin',   name: 'Торин',   x: 5,  y: 4, enemy: false },
+    { id: 'tok_goblin1', name: 'Гоблин',  x: 8,  y: 3, enemy: true  },
+    { id: 'tok_goblin2', name: 'Гоблин',  x: 10, y: 5, enemy: true  },
+  ];
+
+  // Пересобирает токены из mapTokens (клетка -> пиксель). Читает ТОЛЬКО
+  // mapTokens, без аргументов — по духу renderLog().
+  function renderTokens() {
+    const world = document.getElementById('mapWorld');
+    if (!world) return;
+    world.querySelectorAll('.token').forEach(el => el.remove());
+    for (const t of mapTokens) {
+      const el = document.createElement('div');
+      el.className = 'token' + (t.enemy ? ' enemy' : '');
+      el.dataset.id = t.id;
+      el.dataset.x = t.x;      // клетка — источник истины
+      el.dataset.y = t.y;
+      el.style.left = (t.x * GRID) + 'px';   // пиксель считает клиент из GRID
+      el.style.top  = (t.y * GRID) + 'px';
+      el.textContent = t.name;
+      world.appendChild(el);
+    }
+  }
+  renderTokens();
 
   // ===================================================================
   // Карта — ЛОКАЛЬНЫЙ пан/зум вида клиента. Состояние в переменной view,
