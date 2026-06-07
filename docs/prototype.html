@@ -220,6 +220,51 @@
   .sim button { background: #241c12; color: var(--ink-dim); border: 1px dashed var(--edge-bright);
     border-radius: 4px; font-family: 'Spectral'; font-size: 11px; font-style: italic; padding: 6px 10px; cursor: pointer; }
   .sim button:hover { color: var(--gold-bright); border-color: var(--gold); }
+
+  /* ---------- CODEX / справочник ---------- */
+  .codex { position: absolute; inset: 0; display: none; grid-template-columns: 240px 1fr;
+    background: radial-gradient(ellipse at 50% 0%, #221c14, #16130d); }
+  .codex.show { display: grid; }
+  .codex-left { border-right: 1px solid var(--edge); display: flex; flex-direction: column; min-height: 0; }
+  .codex-search { margin: 12px 12px 8px; padding: 7px 10px; background: var(--panel);
+    border: 1px solid var(--edge); border-radius: 4px; color: var(--ink);
+    font-family: 'Spectral'; font-size: 13px; }
+  .codex-search:focus { outline: none; border-color: var(--gold); }
+  .codex-search::placeholder { color: var(--ink-dim); font-style: italic; }
+  .codex-tabs { display: flex; gap: 6px; padding: 0 12px 8px; }
+  .codex-tab { flex: 1; text-align: center; padding: 6px; font-family: 'Cinzel'; font-size: 11px;
+    letter-spacing: .04em; color: var(--ink-dim); border: 1px solid var(--edge); border-radius: 4px;
+    cursor: pointer; transition: all .15s; }
+  .codex-tab:hover { color: var(--ink); }
+  .codex-tab.active { color: var(--gold-bright); border-color: var(--gold); background: rgba(201,162,83,.1); }
+  .codex-list { flex: 1; overflow-y: auto; padding: 0 8px 12px; display: flex; flex-direction: column; gap: 5px; }
+  .codex-row { display: flex; align-items: center; gap: 9px; padding: 7px 8px;
+    border: 1px solid transparent; border-radius: 5px; cursor: pointer; transition: all .12s; }
+  .codex-row:hover { background: #241c14; }
+  .codex-row.active { border-color: var(--gold); background: #322618; }
+  .codex-lvl { width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%; border: 1px solid var(--edge-bright);
+    background: radial-gradient(circle at 35% 30%, var(--gold-bright), #6a4a18); color: #1a140a;
+    font-family: 'Cinzel'; font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+  .codex-row-main { flex: 1; min-width: 0; }
+  .codex-row-name { font-family: 'Spectral'; font-size: 13px; color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .codex-row-sub { font-size: 10px; color: var(--ink-dim); }
+  .codex-badge { font-size: 9px; font-family: 'Cinzel'; letter-spacing: .05em; padding: 2px 5px;
+    border-radius: 3px; border: 1px solid var(--edge-bright); color: var(--ink-dim); flex-shrink: 0; }
+  .codex-badge.hb { color: #d98a7a; border-color: var(--blood); }
+  .codex-right { padding: 22px 26px; overflow-y: auto; }
+  .codex-empty { padding: 40px 20px; text-align: center; color: var(--ink-dim); font-style: italic; font-size: 13px; }
+  .codex-detail h2 { font-family: 'Cinzel'; color: var(--gold-bright); font-size: 18px; letter-spacing: .06em;
+    margin-bottom: 8px; border-bottom: 1px solid var(--edge); padding-bottom: 8px; }
+  .codex-meta { color: var(--ink-dim); font-size: 12px; margin-bottom: 14px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+  .codex-meta b { color: var(--ink); font-family: 'Cinzel'; font-weight: 600; }
+  .codex-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .codex-chip { background: var(--panel); border: 1px solid var(--edge-bright); border-radius: 5px;
+    padding: 7px 10px; font-size: 13px; color: var(--ink); }
+  .codex-chip .roll-label { color: var(--gold); font-family: 'Cinzel'; font-size: 10px;
+    letter-spacing: .04em; display: block; margin-bottom: 2px; }
+  .codex-chip .roll-note { color: var(--ink-dim); font-style: italic; font-size: 10px; }
+  .codex-desc { color: var(--ink-dim); line-height: 1.7; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -232,6 +277,7 @@
     <div class="nav-tab" data-view="journal">Дневник</div>
     <div class="nav-tab" data-view="quests">Задачи</div>
     <div class="nav-tab" data-view="sheet">Карточка персонажа</div>
+    <div class="nav-tab" data-view="codex">Справочник</div>
     <div class="nav-spacer"></div>
   </div>
 
@@ -275,6 +321,18 @@
       <h2>Задачи</h2>
       <p><b>Активно:</b> Найти пропавший караван · Выследить агента Ксанатара</p>
       <p><b>Выполнено:</b> Отбиться от засады в переулке</p>
+    </div>
+    <!-- codex view (рендерится из store.catalog через renderCodex) -->
+    <div class="codex" id="view-codex">
+      <div class="codex-left">
+        <input class="codex-search" id="codexSearch" type="text" placeholder="Поиск…" autocomplete="off">
+        <div class="codex-tabs">
+          <div class="codex-tab active" data-codex-tab="spells">Заклинания</div>
+          <div class="codex-tab" data-codex-tab="items">Предметы</div>
+        </div>
+        <div class="codex-list" id="codexList"></div>
+      </div>
+      <div class="codex-right codex-detail" id="codexDetail"></div>
     </div>
   </div>
 
@@ -414,6 +472,7 @@
   const store = {
     members: {},
     log: [],
+    catalog: { spells: [], items: [] },
   };
 
   // ===================================================================
@@ -477,6 +536,11 @@
     'dice.rolled': (msg) => {
       store.log.push(msg);
       renderLog();
+    },
+    // весь каталог контента (заклинания/предметы) от сервера
+    'catalog.snapshot': (msg) => {
+      store.catalog = { spells: msg.spells || [], items: msg.items || [] };
+      renderCodex();
     },
   };
 
@@ -546,8 +610,192 @@
 
   renderLog();  // первичная отрисовка (пустое состояние)
 
+  // ===================================================================
+  // Справочник (codex). renderCodex() читает ТОЛЬКО store.catalog, без
+  // аргументов — как renderLog. Поиск/вкладка/выбор — это чисто
+  // визуальное состояние UI (как nav/hotbar/inCombat), вне store.
+  // ===================================================================
+  let codexTab = 'spells';      // 'spells' | 'items'
+  let codexQuery = '';
+  let codexSelectedId = null;
+
+  function codexSpellSub(r) {
+    const school = r.schoolLocal || r.school || '';
+    const lvl = (r.level === 0) ? 'заговор' : ((r.level != null ? r.level : '?') + ' круг');
+    return [school, lvl].filter(Boolean).join(' · ');
+  }
+
+  function renderCodex() {
+    const listEl = document.getElementById('codexList');
+    const detailEl = document.getElementById('codexDetail');
+    if (!listEl || !detailEl) return;
+
+    const cat = store.catalog || { spells: [], items: [] };
+    const total = (cat.spells ? cat.spells.length : 0) + (cat.items ? cat.items.length : 0);
+
+    // синхронизируем активную вкладку и поле поиска с UI-состоянием
+    document.querySelectorAll('.codex-tab').forEach(t =>
+      t.classList.toggle('active', t.dataset.codexTab === codexTab));
+
+    // пустой каталог
+    if (total === 0) {
+      listEl.innerHTML = '<div class="codex-empty">Справочник пуст</div>';
+      detailEl.innerHTML = '<div class="codex-empty">Справочник пуст</div>';
+      return;
+    }
+
+    const records = cat[codexTab] || [];
+    const q = codexQuery.trim().toLowerCase();
+    const filtered = records.filter(r =>
+      !q || ((r.nameLocal || '') + ' ' + (r.name || '')).toLowerCase().includes(q));
+
+    // --- список ---
+    listEl.innerHTML = '';
+    if (!filtered.length) {
+      listEl.innerHTML = '<div class="codex-empty">Ничего не найдено</div>';
+    } else {
+      if (!filtered.some(r => r.id === codexSelectedId)) codexSelectedId = filtered[0].id;
+      for (const r of filtered) {
+        const row = document.createElement('div');
+        row.className = 'codex-row' + (r.id === codexSelectedId ? ' active' : '');
+        row.onclick = () => { codexSelectedId = r.id; renderCodex(); };
+
+        const circle = document.createElement('div');
+        circle.className = 'codex-lvl';
+        circle.textContent = (codexTab === 'spells')
+          ? String(r.level != null ? r.level : '–')
+          : (r.typeLocal || r.type || '?').slice(0, 1).toUpperCase();
+        row.appendChild(circle);
+
+        const main = document.createElement('div');
+        main.className = 'codex-row-main';
+        const nm = document.createElement('div');
+        nm.className = 'codex-row-name';
+        nm.textContent = r.nameLocal || r.name || '?';
+        const sub = document.createElement('div');
+        sub.className = 'codex-row-sub';
+        sub.textContent = (codexTab === 'spells') ? codexSpellSub(r) : (r.typeLocal || r.type || '');
+        main.appendChild(nm); main.appendChild(sub);
+        row.appendChild(main);
+
+        const badge = document.createElement('div');
+        badge.className = 'codex-badge' + (r.source === 'HB' ? ' hb' : '');
+        badge.textContent = r.source || 'SRD';
+        row.appendChild(badge);
+
+        listEl.appendChild(row);
+      }
+    }
+
+    // --- детали выбранной записи (в пределах текущей вкладки) ---
+    const rec = records.find(r => r.id === codexSelectedId) || filtered[0] || null;
+    detailEl.innerHTML = '';
+    if (!rec) {
+      detailEl.innerHTML = '<div class="codex-empty">Выберите запись</div>';
+      return;
+    }
+    renderCodexDetail(detailEl, rec);
+  }
+
+  function renderCodexDetail(el, r) {
+    const h2 = document.createElement('h2');
+    h2.textContent = r.nameLocal || r.name || '?';
+    el.appendChild(h2);
+
+    // метаданные строкой
+    const meta = document.createElement('div');
+    meta.className = 'codex-meta';
+    const parts = [];
+    if (r.kind === 'spell') {
+      parts.push(['Школа', r.schoolLocal || r.school]);
+      parts.push(['Круг', r.level === 0 ? 'заговор' : r.level]);
+      parts.push(['Время', r.castingTimeLocal]);
+      parts.push(['Дистанция', r.rangeLocal]);
+      parts.push(['Длительность', r.durationLocal]);
+      if (r.concentration) parts.push(['', 'Концентрация']);
+      if (r.ritual) parts.push(['', 'Ритуал']);
+    } else {
+      parts.push(['Тип', r.typeLocal || r.type]);
+      if (r.weight != null) parts.push(['Вес', r.weight + ' фнт']);
+      if (r.value) parts.push(['Цена', r.value.amount + ' ' + (r.value.currency || '')]);
+    }
+    for (const [k, v] of parts) {
+      if (v == null || v === '') continue;
+      const span = document.createElement('span');
+      if (k) {
+        const b = document.createElement('b');
+        b.textContent = k + ': ';
+        span.appendChild(b);
+        span.appendChild(document.createTextNode(String(v)));
+      } else {
+        span.textContent = String(v);
+      }
+      meta.appendChild(span);
+    }
+    el.appendChild(meta);
+
+    // чипы бросков (в каталоге БЕЗ modifier — помечаем «+ мод. персонажа»)
+    const rolls = r.rolls
+      || (r.weapon && r.weapon.rolls)
+      || (r.consumable && r.consumable.rolls)
+      || [];
+    if (rolls.length) {
+      const chips = document.createElement('div');
+      chips.className = 'codex-chips';
+      for (const roll of rolls) {
+        const chip = document.createElement('div');
+        chip.className = 'codex-chip';
+        const lab = document.createElement('span');
+        lab.className = 'roll-label';
+        lab.textContent = roll.label || 'Бросок';
+        chip.appendChild(lab);
+        const dmg = roll.damageType ? ' ' + roll.damageType : '';
+        chip.appendChild(document.createTextNode((roll.notation || '') + dmg));
+        const note = document.createElement('span');
+        note.className = 'roll-note';
+        note.textContent = ' + мод. персонажа';
+        chip.appendChild(note);
+        chips.appendChild(chip);
+      }
+      el.appendChild(chips);
+    }
+
+    // спасбросок (DC подставляется от персонажа)
+    if (r.save && r.save.ability) {
+      const sv = document.createElement('div');
+      sv.className = 'codex-meta';
+      const b = document.createElement('b');
+      b.textContent = 'Спасбросок: ';
+      sv.appendChild(b);
+      sv.appendChild(document.createTextNode(r.save.ability.toUpperCase() + ' (DC — от персонажа)'));
+      el.appendChild(sv);
+    }
+
+    if (r.description) {
+      const d = document.createElement('div');
+      d.className = 'codex-desc';
+      d.textContent = r.description;
+      el.appendChild(d);
+    }
+  }
+
+  // поиск и вкладки справочника — чистый JS над store.catalog, без сервера
+  document.getElementById('codexSearch').oninput = (e) => {
+    codexQuery = e.target.value;
+    renderCodex();
+  };
+  document.querySelectorAll('.codex-tab').forEach(t => {
+    t.onclick = () => {
+      codexTab = t.dataset.codexTab;
+      codexSelectedId = null;   // сбрасываем выбор при смене вкладки
+      renderCodex();
+    };
+  });
+
+  renderCodex();  // первичная отрисовка (пустое состояние)
+
   // left nav -> center view switch
-  const views = ['map','journal','quests','sheet'];
+  const views = ['map','journal','quests','sheet','codex'];
   document.querySelectorAll('.nav-tab').forEach(tab => {
     tab.onclick = () => {
       document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
