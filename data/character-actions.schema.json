@@ -1,0 +1,57 @@
+{
+  "_comment": "ШАБЛОН поля actions[] персонажа — как карточка ССЫЛАЕТСЯ на каталог контента (data/srd, data/homebrew). Принцип CLAUDE.md: одни данные — одно представление, и modifier хранится ПОСЧИТАННЫМ. Каталог хранит механику без персонажа; персонаж добавляет только то, что зависит ОТ НЕГО, через overrides. Две формы записи действия допустимы: (1) ссылка { ref, overrides? } и (2) инлайн-объект (как в старом docs/character-schema.json) — для совместимости.",
+
+  "_comment_assembly": "СБОРКА действия для движка бросков: взять запись каталога по ref → наложить overrides → получить готовое действие, где у rolls есть modifier, а у save есть dc. Панель и движок кубиков не знают, ссылка это или инлайн — на выходе одна универсальная форма (см. форму roll в character-schema.json: { notation, modifier, type }).",
+
+  "actions": [
+    {
+      "_comment_ref": "ФОРМА 1 — ссылка на каталог. ref — id записи из data/srd или data/homebrew (spell_* или item_*). Механика (notation, тип урона, школа, стоимость, scaling) берётся ОТТУДА и тут НЕ дублируется.",
+      "ref": "spell_fireball",
+
+      "_comment_overrides": "overrides — ТОЛЬКО персонаж-зависимые величины, которых нет в каталоге. Опционально. Здесь хранится ПОСЧИТАННЫЙ результат (не формула): modifier для каждого броска и dc спасброска. rolls в overrides сопоставляются с rolls каталога по label.",
+      "overrides": {
+        "rolls": [
+          { "label": "Damage", "modifier": 0 }
+        ],
+        "save": { "dc": 15 }
+      }
+    },
+
+    {
+      "_comment_ref_attack": "Пример ссылки на заклинание-атаку: каталог даёт notation бросков (1d20 attack, 2d10 damage), персонаж — посчитанные modifier (бонус атаки +7, бонус урона 0).",
+      "ref": "spell_firebolt",
+      "overrides": {
+        "rolls": [
+          { "label": "Attack", "modifier": 7 },
+          { "label": "Damage", "modifier": 0 }
+        ]
+      }
+    },
+
+    {
+      "_comment_ref_weapon": "Пример ссылки на предмет-оружие: каталог даёт rolls внутри weapon (1d8 урон), персонаж — посчитанный бонус атаки/урона. Для оружия overrides обычно содержит и бросок Attack (1d20), которого в каталоге нет: 1d20-атака — это действие персонажа, а оружие даёт лишь урон. Поэтому Attack добавляется здесь целиком.",
+      "ref": "item_longsword",
+      "overrides": {
+        "rolls": [
+          { "label": "Attack", "notation": "1d20", "modifier": 5, "type": "attack" },
+          { "label": "Damage", "modifier": 3 }
+        ]
+      }
+    },
+
+    {
+      "_comment_inline": "ФОРМА 2 — инлайн-действие БЕЗ ref (как в старом docs/character-schema.json). Допустимо для совместимости и для уникального контента, которого нет в каталоге. Здесь modifier у rolls и dc у save ХРАНЯТСЯ ПОСЧИТАННЫМИ сразу — сборка не нужна.",
+      "id": "act_custom_bite",
+      "name": "Bite",
+      "nameLocal": "Укус",
+      "kind": "action",
+      "cost": null,
+      "save": null,
+      "description": "Природная атака укусом.",
+      "rolls": [
+        { "label": "Attack", "notation": "1d20", "modifier": 4, "type": "attack" },
+        { "label": "Damage", "notation": "1d6", "modifier": 2, "type": "damage", "damageType": "piercing" }
+      ]
+    }
+  ]
+}
