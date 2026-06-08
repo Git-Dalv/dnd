@@ -710,6 +710,8 @@
     fog: [],                      // открытые клетки тумана [[x,y],...] (сервер)
     scenes: [],                   // список сцен [{id,name}] (сервер)
     activeSceneId: null,          // id активной сцены
+    scenarios: [],                // сценарии [{id,name,description,sceneIds,activeSceneId}]
+    activeScenarioId: null,       // активный сценарий
     scene: { map: null, mapAssetId: null, grid: { size: 48, offsetX: 0, offsetY: 0 },
              fogEnabled: false, notes: '', searchKey: '', description: '' },  // активная сцена
   };
@@ -845,6 +847,12 @@
       store.scenes = msg.scenes || [];
       store.activeSceneId = msg.activeSceneId || store.activeSceneId;
       renderScenesTool();
+    },
+    // список сценариев (наборов сцен) и активный
+    'scenario.list': (msg) => {
+      store.scenarios = msg.scenarios || [];
+      store.activeScenarioId = msg.activeScenarioId || null;
+      if (document.getElementById('sceneWin').classList.contains('show')) renderScenesTool();
     },
     // переключение/полное состояние сцены: фон+сетка+токены+туман
     'scene.switched': (msg) => {
@@ -1902,13 +1910,36 @@
   function renderScenesTool() {
     const body = document.getElementById('sceneBody');
     if (!body) return;
-    body.innerHTML = (store.scenes || []).map(s => {
+    const scn = (store.scenarios || []).find(s => s.id === store.activeScenarioId);
+    const ids = scn ? (scn.sceneIds || []) : (store.scenes || []).map(s => s.id);  // нет сценария → все сцены
+    const inScn = (store.scenes || []).filter(s => ids.includes(s.id));
+    let html = '<label style="display:block;font-size:11px;color:var(--ink-dim);margin:2px 0 4px">Сценарий</label>';
+    html += '<select id="scnSel">' + (store.scenarios.length ? '' : '<option value="">— нет —</option>')
+      + (store.scenarios || []).map(s => `<option value="${s.id}" ${s.id === store.activeScenarioId ? 'selected' : ''}>${esc(s.name)}</option>`).join('') + '</select>';
+    html += '<div class="tok-controls"><button class="tok-cond-btn" id="scnNew">＋ Сценарий</button></div>';
+    html += inScn.map(s => {
       const active = s.id === store.activeSceneId;
-      return `<div class="spell-row"><div class="spell-main" data-sid="${s.id}" style="cursor:pointer"><div class="spell-name">${esc(s.name)}${active ? ' ✦' : ''}</div></div>${active ? '<button class="tok-cond-btn" data-edit="1">✎ Параметры</button>' : ''}</div>`;
-    }).join('') + '<div class="tok-controls"><button class="tok-cond-btn" id="sceneNew">＋ Новая сцена</button></div>';
+      return `<div class="spell-row"><div class="spell-main" data-sid="${s.id}" style="cursor:pointer"><div class="spell-name">${esc(s.name)}${active ? ' ✦' : ''}</div></div>`
+        + `${active ? '<button class="tok-cond-btn" data-edit="1">✎</button>' : ''}`
+        + `${scn ? `<button class="tok-cond-btn" data-rm="${s.id}">−</button>` : ''}</div>`;
+    }).join('');
+    const out = (store.scenes || []).filter(s => !ids.includes(s.id));
+    html += '<div class="tok-controls"><button class="tok-cond-btn" id="sceneNew">＋ Новая сцена</button>'
+      + (scn && out.length ? '<button class="tok-cond-btn" id="sceneAdd">+ существующую</button>' : '') + '</div>';
+    body.innerHTML = html;
     body.querySelectorAll('[data-sid]').forEach(r => r.onclick = () => net.send({ type: 'scene.switch', sceneId: r.dataset.sid }));
     const ed = body.querySelector('[data-edit]'); if (ed) ed.onclick = () => openSceneParams(store.activeSceneId);
+    body.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => net.send({ type: 'scenario.removeScene', scenarioId: store.activeScenarioId, sceneId: b.dataset.rm }));
+    document.getElementById('scnSel').onchange = (e) => { if (e.target.value) net.send({ type: 'scenario.activate', scenarioId: e.target.value }); };
+    document.getElementById('scnNew').onclick = () => { const n = prompt('Имя сценария', 'Подземелье Зевающего портала'); if (n) net.send({ type: 'scenario.create', name: n }); };
     document.getElementById('sceneNew').onclick = () => openSceneParams(null);
+    const addBtn = document.getElementById('sceneAdd');
+    if (addBtn) addBtn.onclick = () => {
+      const list = out.map((s, i) => `${i + 1}) ${s.name}`).join('\n');
+      const pick = parseInt(prompt('Добавить сцену в сценарий:\n' + list, '1'), 10);
+      const s = out[pick - 1];
+      if (s) net.send({ type: 'scenario.addScene', scenarioId: store.activeScenarioId, sceneId: s.id });
+    };
   }
   function openScenesTool() { renderScenesTool(); document.getElementById('sceneWin').classList.add('show'); }
 
