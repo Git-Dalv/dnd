@@ -1,10 +1,14 @@
 [
   {
-    "_comment": "Бестиарий: статблок существа в форме character-schema (как принимает npc.create при постановке фишки). disposition: 'monster' | 'neutral' — для вкладок в выборе. ac/hp/abilities/actions — как у персонажа; rolls БЕЗ ссылок, modifier уже посчитан для конкретного существа. Тексты — свои краткие формулировки, числа из SRD под OGL.",
+    "_comment": "Бестиарий: статблок существа в форме character-schema (как принимает npc.create при постановке фишки). source: 'SRD' (базовое, read-only) | 'HB' (homebrew, в БД). disposition: 'monster' | 'neutral' — для фильтра. category — произвольная строка, вкладки бестиария строятся из встретившихся значений. image — dataURL картинки (как meta.avatar у персонажа) или null. ac/hp/abilities/actions — как у персонажа; rolls БЕЗ ссылок, modifier уже посчитан для конкретного существа. cr — базовый CR (для будущего масштабирования). Тексты — свои краткие формулировки, числа из SRD под OGL.",
     "id": "creature_goblin",
     "name": "Гоблин",
+    "source": "SRD",
     "disposition": "monster",
+    "category": "Гоблины",
     "type": "гуманоид (гоблиноид)",
+    "image": null,
+    "description": "Мелкий злобный гуманоид, нападающий стаями из засад.",
     "ac": 15,
     "hp": { "current": 7, "max": 7 },
     "abilities": { "str": 8, "dex": 14, "con": 10, "int": 10, "wis": 8, "cha": 8 },
@@ -13,13 +17,17 @@
         { "label": "Attack", "notation": "1d20", "type": "attack", "modifier": 4 },
         { "label": "Damage", "notation": "1d6", "type": "damage", "damageType": "slashing", "modifier": 2 } ] }
     ],
-    "source": "SRD"
+    "cr": 0.25
   },
   {
     "id": "creature_orc",
     "name": "Орк",
+    "source": "SRD",
     "disposition": "monster",
+    "category": "Орки",
     "type": "гуманоид (орк)",
+    "image": null,
+    "description": "Свирепый воин-налётчик, поклоняющийся Груумшу.",
     "ac": 13,
     "hp": { "current": 15, "max": 15 },
     "abilities": { "str": 16, "dex": 12, "con": 16, "int": 7, "wis": 11, "cha": 10 },
@@ -28,13 +36,17 @@
         { "label": "Attack", "notation": "1d20", "type": "attack", "modifier": 5 },
         { "label": "Damage", "notation": "1d12", "type": "damage", "damageType": "slashing", "modifier": 3 } ] }
     ],
-    "source": "SRD"
+    "cr": 0.5
   },
   {
     "id": "creature_skeleton",
     "name": "Скелет",
+    "source": "SRD",
     "disposition": "monster",
+    "category": "Нежить",
     "type": "нежить",
+    "image": null,
+    "description": "Оживлённые кости павшего воина, послушные некроманту.",
     "ac": 13,
     "hp": { "current": 13, "max": 13 },
     "abilities": { "str": 10, "dex": 14, "con": 15, "int": 6, "wis": 8, "cha": 5 },
@@ -43,13 +55,74 @@
         { "label": "Attack", "notation": "1d20", "type": "attack", "modifier": 4 },
         { "label": "Damage", "notation": "1d6", "type": "damage", "damageType": "piercing", "modifier": 2 } ] }
     ],
-    "source": "SRD"
+    "cr": 0.25
+  },
+  {
+    "id": "creature_zombie",
+    "name": "Зомби",
+    "source": "SRD",
+    "disposition": "monster",
+    "category": "Нежить",
+    "type": "нежить",
+    "image": null,
+    "description": "Медлительный оживший труп, упрямо цепляющийся за подобие жизни.",
+    "ac": 8,
+    "hp": { "current": 22, "max": 22 },
+    "abilities": { "str": 13, "dex": 6, "con": 16, "int": 3, "wis": 6, "cha": 5 },
+    "actions": [
+      { "nameLocal": "Удар", "rolls": [
+        { "label": "Attack", "notation": "1d20", "type": "attack", "modifier": 3 },
+        { "label": "Damage", "notation": "1d6", "type": "damage", "damageType": "bludgeoning", "modifier": 1 } ] }
+    ],
+    "cr": 0.25
+  },
+  {
+    "id": "creature_cultist",
+    "name": "Культист",
+    "source": "SRD",
+    "disposition": "monster",
+    "category": "Культисты",
+    "type": "гуманоид (любая раса)",
+    "image": null,
+    "description": "Фанатик, поклявшийся служить тёмному божеству или демону.",
+    "ac": 12,
+    "hp": { "current": 9, "max": 9 },
+    "abilities": { "str": 11, "dex": 12, "con": 10, "int": 10, "wis": 11, "cha": 10 },
+    "actions": [
+      { "nameLocal": "Скимитар", "rolls": [
+        { "label": "Attack", "notation": "1d20", "type": "attack", "modifier": 3 },
+        { "label": "Damage", "notation": "1d6", "type": "damage", "damageType": "slashing", "modifier": 1 } ] }
+    ],
+    "cr": 0.125
+  },
+  {
+    "id": "creature_cult_fanatic",
+    "name": "Жрец культа",
+    "source": "SRD",
+    "disposition": "monster",
+    "category": "Культисты",
+    "type": "гуманоид (любая раса)",
+    "image": null,
+    "description": "Вожак культистов, владеющий заклинаниями и фанатичной волей.",
+    "ac": 13,
+    "hp": { "current": 33, "max": 33 },
+    "abilities": { "str": 11, "dex": 14, "con": 12, "int": 10, "wis": 13, "cha": 14 },
+    "actions": [
+      { "nameLocal": "Кинжал", "rolls": [
+        { "label": "Attack", "notation": "1d20", "type": "attack", "modifier": 4 },
+        { "label": "Damage", "notation": "1d4", "type": "damage", "damageType": "piercing", "modifier": 2 } ] }
+    ],
+    "cr": 2
   },
   {
     "id": "creature_guard",
     "name": "Городской стражник",
+    "source": "SRD",
     "disposition": "neutral",
+    "category": "Стражники",
     "type": "гуманоид (человек)",
+    "image": null,
+    "description": "Караульный на службе города, следящий за порядком.",
     "ac": 16,
     "hp": { "current": 11, "max": 11 },
     "abilities": { "str": 13, "dex": 12, "con": 12, "int": 10, "wis": 11, "cha": 10 },
@@ -58,13 +131,17 @@
         { "label": "Attack", "notation": "1d20", "type": "attack", "modifier": 3 },
         { "label": "Damage", "notation": "1d6", "type": "damage", "damageType": "piercing", "modifier": 1 } ] }
     ],
-    "source": "SRD"
+    "cr": 0.125
   },
   {
     "id": "creature_merchant",
     "name": "Торговец",
+    "source": "SRD",
     "disposition": "neutral",
+    "category": "Жители",
     "type": "гуманоид (человек)",
+    "image": null,
+    "description": "Городской лавочник; дерётся неохотно и только при нужде.",
     "ac": 10,
     "hp": { "current": 4, "max": 4 },
     "abilities": { "str": 10, "dex": 10, "con": 10, "int": 11, "wis": 12, "cha": 13 },
@@ -73,13 +150,17 @@
         { "label": "Attack", "notation": "1d20", "type": "attack", "modifier": 2 },
         { "label": "Damage", "notation": "1d4", "type": "damage", "damageType": "bludgeoning", "modifier": 0 } ] }
     ],
-    "source": "SRD"
+    "cr": 0
   },
   {
     "id": "creature_commoner",
     "name": "Крестьянин",
+    "source": "SRD",
     "disposition": "neutral",
+    "category": "Жители",
     "type": "гуманоид (человек)",
+    "image": null,
+    "description": "Простой житель: фермер, слуга или ремесленник.",
     "ac": 10,
     "hp": { "current": 4, "max": 4 },
     "abilities": { "str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10 },
@@ -88,6 +169,6 @@
         { "label": "Attack", "notation": "1d20", "type": "attack", "modifier": 2 },
         { "label": "Damage", "notation": "1d4", "type": "damage", "damageType": "bludgeoning", "modifier": 0 } ] }
     ],
-    "source": "SRD"
+    "cr": 0
   }
 ]

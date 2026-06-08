@@ -62,6 +62,22 @@ CREATE TABLE IF NOT EXISTS seats (
 
 CREATE INDEX IF NOT EXISTS idx_characters_room ON characters(room_id);
 
+-- Homebrew-существа бестиария. Базовые существа (SRD) — статичный JSON в каталоге
+-- (read-only), а пользовательские правки/новые существа живут здесь, как characters.
+-- Наверх вынесены поля для списка/вкладок (имя, категория, расположение),
+-- полный статблок — блобом в data (source всегда 'HB'). В бестиарии srd+hb
+-- сливаются по id: homebrew перекрывает srd.
+CREATE TABLE IF NOT EXISTS creatures (
+    creature_id TEXT PRIMARY KEY,
+    room_id     TEXT NOT NULL REFERENCES games(room_id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    category    TEXT,
+    disposition TEXT,
+    data        TEXT NOT NULL,            -- полный статблок блобом
+    created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_creatures_room ON creatures(room_id);
+
 -- Бинарь карт (и в будущем токенов/портретов), привязан к игре. Картинки
 -- ТЯЖЁЛЫЕ — храним в отдельной таблице, не в games.state, и отдаём по HTTP с
 -- кэшем браузера (не гоняем через WebSocket-снапшоты).
@@ -186,6 +202,60 @@ def update_character_hotbar(char_id: str, hotbar: list) -> bool:
         conn.execute("UPDATE characters SET data=? WHERE char_id=?",
                      (json.dumps(data, ensure_ascii=False), char_id))
         return True
+
+
+# ---- существа бестиария (homebrew, по образцу персонажей) ------------------
+
+def create_creature(creature_id: str, room_id: str, data: dict) -> dict:
+    """Создаёт homebrew-существо. data — полный статблок; source проставляем 'HB'."""
+    now = int(time.time())
+    data = dict(data)
+    data["source"] = "HB"
+    data.setdefault("id", creature_id)
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO creatures (creature_id, room_id, name, category, disposition, data, created_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (creature_id, room_id, data.get("name", "?"), data.get("category"),
+             data.get("disposition"), json.dumps(data, ensure_ascii=False), now),
+        )
+    return data
+
+
+def update_creature(creature_id: str, data: dict) -> bool:
+    """Перезаписывает статблок существа. source остаётся 'HB'. True, если нашли."""
+    data = dict(data)
+    data["source"] = "HB"
+    data.setdefault("id", creature_id)
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE creatures SET name=?, category=?, disposition=?, data=? WHERE creature_id=?",
+            (data.get("name", "?"), data.get("category"), data.get("disposition"),
+             json.dumps(data, ensure_ascii=False), creature_id),
+        )
+        return cur.rowcount > 0
+
+
+def delete_creature(creature_id: str) -> bool:
+    with connect() as conn:
+        cur = conn.execute("DELETE FROM creatures WHERE creature_id=?", (creature_id,))
+        return cur.rowcount > 0
+
+
+def get_creature(creature_id: str) -> dict | None:
+    with connect() as conn:
+        row = conn.execute("SELECT data FROM creatures WHERE creature_id=?", (creature_id,)).fetchone()
+    return json.loads(row["data"]) if row else None
+
+
+def list_creatures(room_id: str) -> list[dict]:
+    """Полные статблоки существ игры (их немного — отдаём целиком, чтобы бестиарий
+    рисовал карточки без доп. запросов)."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT data FROM creatures WHERE room_id=? ORDER BY created_at", (room_id,)
+        ).fetchall()
+    return [json.loads(r["data"]) for r in rows]
 
 
 # ---- места (лимит 4+1 проверяет сервер) -----------------------------------
