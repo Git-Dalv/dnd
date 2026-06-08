@@ -95,6 +95,12 @@ class Room:
     # состояние боя (по образцу room-schema) и режим сцены — сессионное состояние
     combat: dict = field(default_factory=lambda: {"active": False, "round": 0, "turnIndex": 0, "order": []})
     mode: str = "explore"  # 'explore' | 'combat'
+    # туман войны: множество ОТКРЫТЫХ клеток (x,y). Остальное скрыто; игрокам
+    # шлём только revealed (скрытое не раскрываем), DM видит всё.
+    fog: set = field(default_factory=set)
+
+    def fog_list(self):
+        return [[x, y] for (x, y) in self.fog]
 
     def seed_tokens_if_empty(self):
         """Один раз кладёт стартовую раскладку, если токенов ещё нет."""
@@ -111,6 +117,7 @@ class Room:
         state["tokens"] = list(self.tokens.values())
         state["combat"] = self.combat
         state["mode"] = self.mode
+        state["fog"] = self.fog_list()
         db.save_game_state(self.room_id, state)
 
     async def broadcast(self, message: dict):
@@ -166,6 +173,9 @@ def get_room(room_id: str) -> Room:
             room.combat = state["combat"]
         if state.get("mode") in ("explore", "combat"):
             room.mode = state["mode"]
+        for c in (state.get("fog") or []):
+            if isinstance(c, (list, tuple)) and len(c) == 2:
+                room.fog.add((int(c[0]), int(c[1])))
         rooms[room_id] = room
     room.seed_tokens_if_empty()   # фолбэк: новая игра без сохранённой раскладки
     return room
@@ -207,6 +217,8 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     # и текущее состояние боя/режима сцены
     await ws.send_text(json.dumps({"type": "combat.updated", "combat": room.combat}, ensure_ascii=False))
     await ws.send_text(json.dumps({"type": "mode.set", "mode": room.mode}, ensure_ascii=False))
+    # и текущий туман (открытые клетки) — чтобы новый клиент знал, что раскрыто
+    await ws.send_text(json.dumps({"type": "fog.updated", "revealed": room.fog_list()}, ensure_ascii=False))
     # и его собственный персонаж (личное сообщение, по образцу log/catalog.snapshot)
     if character is not None:
         await ws.send_text(json.dumps({"type": "character.snapshot", "character": character}, ensure_ascii=False))
@@ -384,6 +396,25 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
         token["conditions"] = conds
         await room.broadcast({"type": "token.condition.changed", "tokenId": token["id"],
                               "conditions": conds})
+        room.persist_tokens()
+        return
+
+    # --- туман войны (gm-only): кисть открыть/скрыть клетки ---
+    if mtype in ("fog.reveal", "fog.hide"):
+        if not require_gm(room.members.get(member_id)):
+            return
+        reveal = mtype == "fog.reveal"
+        for c in (msg.get("cells") or []):
+            try:
+                x = max(0, min(GRID_MAX, int(c[0])))
+                y = max(0, min(GRID_MAX, int(c[1])))
+            except (TypeError, ValueError, IndexError):
+                continue
+            if reveal:
+                room.fog.add((x, y))
+            else:
+                room.fog.discard((x, y))
+        await room.broadcast({"type": "fog.updated", "revealed": room.fog_list()})
         room.persist_tokens()
         return
 

@@ -92,6 +92,10 @@
   .map-viewport.dragging { cursor: grabbing; }
   /* world — только носитель токенов; токены позиционируются от его origin (0,0) */
   .map-world { position: absolute; top: 0; left: 0; width: 0; height: 0; transform-origin: 0 0; }
+  /* туман войны: слой под токенами; скрытые клетки — тёмные квадраты */
+  .fog-layer { position: absolute; top: 0; left: 0; pointer-events: none; }
+  .fog-cell { position: absolute; width: var(--grid); height: var(--grid); background: rgba(8,6,4,.94); }
+  .fog-layer.dev .fog-cell { background: rgba(8,6,4,.5); }   /* DM видит под туманом приглушённо */
   .map-label { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5;
     font-family: 'Cinzel'; font-size: 12px; letter-spacing: .15em; color: var(--ink-dim); text-transform: uppercase; }
   .grid-hint { position: absolute; bottom: 14px; right: 16px; z-index: 5; font-size: 11px; color: var(--ink-dim);
@@ -459,7 +463,7 @@
       <!-- viewport обрезает, world таскается/масштабируется внутри -->
       <div class="map-viewport" id="mapViewport">
         <!-- токены создаёт renderTokens() из mapTokens (клетки -> пиксели) -->
-        <div class="map-world" id="mapWorld"></div>
+        <div class="map-world" id="mapWorld"><div class="fog-layer" id="fogLayer"></div></div>
       </div>
       <div class="zoom-ctl">
         <button id="zoomIn" title="Приблизить">+</button>
@@ -657,6 +661,7 @@
     tokens: [],                   // токены сцены от сервера {id,name,x,y,enemy,controlledBy}
     combat: { active: false, round: 0, turnIndex: 0, order: [] },  // трекер боя (сервер)
     mode: 'explore',              // 'explore' | 'combat' — режим сцены
+    fog: [],                      // открытые клетки тумана [[x,y],...] (сервер)
   };
 
   // ===================================================================
@@ -779,6 +784,11 @@
     'mode.set': (msg) => {
       store.mode = msg.mode || 'explore';
       renderMode();
+    },
+    // туман войны: список открытых клеток — перерисовать оверлей
+    'fog.updated': (msg) => {
+      store.fog = msg.revealed || [];
+      renderFog();
     },
   };
 
@@ -1621,6 +1631,7 @@
   renderParty();
   renderCombat();
   renderMode();
+  // renderFog() — после объявления GRID, в секции карты (см. ниже)
 
   // ростер персонажей (имена для подписей партии) — read-only из лобби-API
   fetch(`/api/games/${encodeURIComponent(net.room)}/characters`)
@@ -1652,6 +1663,29 @@
   // «на веру». Право двигать определяет controlledBy (см. canMove).
   // ===================================================================
   const GRID = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--grid')) || 48;
+
+  // Туман: тёмные квадраты на СКРЫТЫХ клетках в пределах мира. revealed —
+  // открытые клетки (из store.fog). В dev DM видит под туманом приглушённо.
+  function renderFog() {
+    const layer = document.getElementById('fogLayer');
+    if (!layer) return;
+    const FOG_COLS = 64, FOG_ROWS = 44;   // экстент мира в клетках (под map-world 3000x2000)
+    const revealed = new Set((store.fog || []).map(c => c[0] + ',' + c[1]));
+    layer.classList.toggle('dev', !!(store.me && store.me.dev));
+    const frag = document.createDocumentFragment();
+    for (let y = 0; y < FOG_ROWS; y++) {
+      for (let x = 0; x < FOG_COLS; x++) {
+        if (revealed.has(x + ',' + y)) continue;   // открытая клетка — без тумана
+        const cell = document.createElement('div');
+        cell.className = 'fog-cell';
+        cell.style.left = (x * GRID) + 'px';
+        cell.style.top = (y * GRID) + 'px';
+        frag.appendChild(cell);
+      }
+    }
+    layer.innerHTML = '';
+    layer.appendChild(frag);
+  }
 
   // вправе ли ЭТОТ клиент двигать токен t — логика совпадает с серверной:
   // GM двигает любой; игрок — только свой (controlledBy == его member).
@@ -1705,6 +1739,7 @@
     }
   }
   renderTokens();
+  renderFog();   // первичная отрисовка тумана (GRID уже объявлен выше)
 
   // ===================================================================
   // Карта — ЛОКАЛЬНЫЙ пан/зум вида клиента. Состояние в переменной view,
@@ -1768,10 +1803,20 @@
       // fog-reveal/fog-hide обрабатываются кистью (S4) на mousemove/mouseup
     }
 
-    // кисть тумана — реализуется в S4 (копит задетые клетки, шлёт пачкой)
-    function fogBrushStart() {}
-    function fogBrushMove() {}
-    function fogBrushEnd() {}
+    // кисть тумана: копим задетые клетки во время протаскивания, шлём пачкой
+    let fogCells = null;
+    function fogBrushStart(e) { fogCells = new Set(); fogBrushMove(e); }
+    function fogBrushMove(e) {
+      if (!fogCells) return;
+      const [cx, cy] = screenToCell(e.clientX, e.clientY);
+      fogCells.add(cx + ',' + cy);
+    }
+    function fogBrushEnd() {
+      if (!fogCells || !fogCells.size) { fogCells = null; return; }
+      const cells = [...fogCells].map(s => s.split(',').map(Number));
+      net.send({ type: activeTool === 'fog-reveal' ? 'fog.reveal' : 'fog.hide', cells });
+      fogCells = null;
+    }
 
     // пан — таскание по пустому месту (по токену не панить)
     let drag = null;
