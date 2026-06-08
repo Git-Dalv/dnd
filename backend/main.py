@@ -99,6 +99,7 @@ class Room:
     # обработчики token.*/fog.* остаются без изменений. id -> сцена.
     scenes: dict[str, dict] = field(default_factory=dict)
     active_scene_id: str | None = None
+    notes: str = ""   # приватные заметки мастера (видны только gm, в БД)
 
     def ensure_scene(self) -> dict:
         """Гарантирует наличие активной сцены (дефолтная — со стартовой раскладкой)."""
@@ -152,6 +153,7 @@ class Room:
         state["activeSceneId"] = self.active_scene_id
         state["combat"] = self.combat
         state["mode"] = self.mode
+        state["notes"] = self.notes
         db.save_game_state(self.room_id, state)
 
     async def broadcast(self, message: dict):
@@ -223,6 +225,8 @@ def get_room(room_id: str) -> Room:
             room.combat = state["combat"]
         if state.get("mode") in ("explore", "combat"):
             room.mode = state["mode"]
+        if isinstance(state.get("notes"), str):
+            room.notes = state["notes"]
         rooms[room_id] = room
     room.seed_tokens_if_empty()   # фолбэк: новая игра без сохранённой раскладки
     return room
@@ -267,6 +271,9 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     # и текущее состояние боя/режима сцены
     await ws.send_text(json.dumps({"type": "combat.updated", "combat": room.combat}, ensure_ascii=False))
     await ws.send_text(json.dumps({"type": "mode.set", "mode": room.mode}, ensure_ascii=False))
+    # приватные заметки мастера — только мастеру (игрокам не шлём)
+    if role == "gm":
+        await ws.send_text(json.dumps({"type": "notes.snapshot", "notes": room.notes}, ensure_ascii=False))
     # и его собственный персонаж (личное сообщение, по образцу log/catalog.snapshot)
     if character is not None:
         await ws.send_text(json.dumps({"type": "character.snapshot", "character": character}, ensure_ascii=False))
@@ -464,6 +471,14 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
                 room.fog.discard((x, y))
         await room.broadcast({"type": "fog.updated", "revealed": room.fog_list()})
         room.persist_tokens()
+        return
+
+    # --- приватные заметки мастера (gm-only): храним в БД, игрокам НЕ шлём ---
+    if mtype == "notes.set":
+        if not require_gm(room.members.get(member_id)):
+            return
+        room.notes = str(msg.get("notes", ""))
+        room.persist_tokens()                 # пишем в games.state
         return
 
     # --- сцены (gm-only): создать / переключить / настроить фон-сетку ---
