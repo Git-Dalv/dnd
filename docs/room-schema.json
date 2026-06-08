@@ -9,12 +9,18 @@
     { "id": "player_max", "name": "Max", "role": "player", "charId": "char_c3d4", "connected": false }
   ],
   "activeSceneId": "scene_tavern",
+  "_comment_scene": "Сцена: map — путь к предзагруженной карте из библиотеки; mapAssetId — id загруженного PNG из таблицы assets (клиент рисует его, если есть, иначе map). fogEnabled — ВКЛючён ли туман (по умолчанию false: город без тумана, пещеру включают). notes/searchKey/description — мета для мастера. fog применяется только при fogEnabled.",
   "scenes": [
     {
       "id": "scene_tavern",
       "name": "Yawning Portal",
       "map": "assets/maps/tavern.jpg",
+      "mapAssetId": null,
       "grid": { "size": 70, "type": "square", "offsetX": 0, "offsetY": 0 },
+      "fogEnabled": false,
+      "notes": "Трактир: вход свободный, тайная дверь за стойкой.",
+      "searchKey": "таверна город",
+      "description": "Шумный трактир «Зевающий портал».",
       "tokens": [
         { "id": "tok_dana", "charId": "char_a1b2", "name": "Лиэндра", "img": "assets/tokens/leandra.png",
           "x": 5, "y": 8, "size": 1, "controlledBy": "player_dana",

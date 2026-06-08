@@ -85,6 +85,24 @@ DEFAULT_TOKENS = [
 DEFAULT_GRID = {"size": 48, "offsetX": 0, "offsetY": 0}
 
 
+def new_scene(sid: str, name: str, tokens: dict | None = None, **extra) -> dict:
+    """Каноническая структура сцены. mapAssetId — id загруженной карты (клиент
+    рисует её, если есть, иначе map-путь из библиотеки). fogEnabled ПО УМОЛЧАНИЮ
+    false (город — без тумана; пещеру включают вручную)."""
+    return {
+        "id": sid, "name": name,
+        "map": extra.get("map"),              # путь к предзагруженной карте (библиотека)
+        "mapAssetId": extra.get("mapAssetId"),  # id загруженного PNG из таблицы assets
+        "grid": dict(extra.get("grid") or DEFAULT_GRID),
+        "fogEnabled": bool(extra.get("fogEnabled", False)),
+        "notes": extra.get("notes", ""),
+        "searchKey": extra.get("searchKey", ""),
+        "description": extra.get("description", ""),
+        "tokens": tokens if tokens is not None else {},
+        "fog": set(),
+    }
+
+
 @dataclass
 class Room:
     room_id: str
@@ -104,12 +122,8 @@ class Room:
     def ensure_scene(self) -> dict:
         """Гарантирует наличие активной сцены (дефолтная — со стартовой раскладкой)."""
         if not self.scenes:
-            self.scenes["scene_default"] = {
-                "id": "scene_default", "name": "Сцена 1", "map": None,
-                "grid": dict(DEFAULT_GRID),
-                "tokens": {t["id"]: dict(t) for t in DEFAULT_TOKENS},
-                "fog": set(),
-            }
+            self.scenes["scene_default"] = new_scene(
+                "scene_default", "Сцена 1", {t["id"]: dict(t) for t in DEFAULT_TOKENS})
         if self.active_scene_id not in self.scenes:
             self.active_scene_id = next(iter(self.scenes))
         return self.scenes[self.active_scene_id]
@@ -131,7 +145,10 @@ class Room:
     def scene_state(self, sid: str) -> dict:
         s = self.scenes[sid]
         return {"id": s["id"], "name": s["name"], "map": s.get("map"),
-                "grid": s.get("grid", dict(DEFAULT_GRID)),
+                "mapAssetId": s.get("mapAssetId"), "grid": s.get("grid", dict(DEFAULT_GRID)),
+                "fogEnabled": bool(s.get("fogEnabled", False)),
+                "notes": s.get("notes", ""), "searchKey": s.get("searchKey", ""),
+                "description": s.get("description", ""),
                 "tokens": list(s["tokens"].values()),
                 "fog": [[x, y] for (x, y) in s["fog"]]}
 
@@ -143,13 +160,8 @@ class Room:
         """Снапшот сцен в БД на СЕССИОННЫХ событиях (дисконнект GM, NPC, бой, сцены).
         НЕ зовём на каждый token.move (позиции — «тик»). Мерджим в state."""
         state = db.get_game_state(self.room_id)
-        state["scenes"] = [
-            {"id": s["id"], "name": s["name"], "map": s.get("map"),
-             "grid": s.get("grid", dict(DEFAULT_GRID)),
-             "tokens": list(s["tokens"].values()),
-             "fog": [[x, y] for (x, y) in s["fog"]]}
-            for s in self.scenes.values()
-        ]
+        # scene_state даёт полную сериализацию сцены (вкл. mapAssetId/fogEnabled/notes/...)
+        state["scenes"] = [self.scene_state(sid) for sid in self.scenes]
         state["activeSceneId"] = self.active_scene_id
         state["combat"] = self.combat
         state["mode"] = self.mode
@@ -206,20 +218,21 @@ def get_room(room_id: str) -> Room:
                 sid = s.get("id")
                 if not sid:
                     continue
-                room.scenes[sid] = {
-                    "id": sid, "name": s.get("name", "Сцена"), "map": s.get("map"),
-                    "grid": s.get("grid") or dict(DEFAULT_GRID),
-                    "tokens": {t["id"]: dict(t) for t in (s.get("tokens") or []) if t.get("id")},
-                    "fog": set((int(c[0]), int(c[1])) for c in (s.get("fog") or []) if len(c) == 2),
-                }
+                sc = new_scene(sid, s.get("name", "Сцена"),
+                               {t["id"]: dict(t) for t in (s.get("tokens") or []) if t.get("id")},
+                               map=s.get("map"), mapAssetId=s.get("mapAssetId"),
+                               grid=s.get("grid"), fogEnabled=s.get("fogEnabled", False),
+                               notes=s.get("notes", ""), searchKey=s.get("searchKey", ""),
+                               description=s.get("description", ""))
+                sc["fog"] = set((int(c[0]), int(c[1])) for c in (s.get("fog") or []) if len(c) == 2)
+                room.scenes[sid] = sc
             room.active_scene_id = state.get("activeSceneId") or next(iter(room.scenes))
         elif isinstance(state.get("tokens"), list) and state["tokens"]:
             # миграция старого «плоского» состояния (до сцен) в дефолтную сцену
-            room.scenes["scene_default"] = {
-                "id": "scene_default", "name": "Сцена 1", "map": None, "grid": dict(DEFAULT_GRID),
-                "tokens": {t["id"]: dict(t) for t in state["tokens"] if t.get("id")},
-                "fog": set((int(c[0]), int(c[1])) for c in (state.get("fog") or []) if len(c) == 2),
-            }
+            sc = new_scene("scene_default", "Сцена 1",
+                           {t["id"]: dict(t) for t in state["tokens"] if t.get("id")})
+            sc["fog"] = set((int(c[0]), int(c[1])) for c in (state.get("fog") or []) if len(c) == 2)
+            room.scenes["scene_default"] = sc
             room.active_scene_id = "scene_default"
         if isinstance(state.get("combat"), dict):
             room.combat = state["combat"]
@@ -488,9 +501,12 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
         if not require_gm(room.members.get(member_id)):
             return
         sid = "scene_" + secrets.token_hex(3)
-        room.scenes[sid] = {"id": sid, "name": msg.get("name") or "Новая сцена",
-                            "map": msg.get("map"), "grid": dict(DEFAULT_GRID),
-                            "tokens": {}, "fog": set()}
+        room.scenes[sid] = new_scene(
+            sid, msg.get("name") or "Новая сцена",
+            map=msg.get("map"), mapAssetId=msg.get("mapAssetId"), grid=msg.get("grid"),
+            fogEnabled=msg.get("fogEnabled", False), notes=msg.get("notes", ""),
+            searchKey=msg.get("searchKey", ""), description=msg.get("description", ""))
+        # новую сцену кладём в активный сценарий (если он есть) — задел под SC5
         await room.broadcast({"type": "scene.list", **room.scene_list()})
         room.persist_tokens()
         return
