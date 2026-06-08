@@ -1,3 +1,6 @@
 backend/__pycache__/
 __pycache__/
 *.pyc
+
+# generated SQLite database (persistence layer) — not source
+data/vtt.db
