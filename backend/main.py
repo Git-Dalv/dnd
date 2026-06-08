@@ -92,6 +92,9 @@ class Room:
     # позиции токенов — событие «тика», держим ТОЛЬКО в памяти Room, в БД на каждый
     # ход НЕ пишем (db.py — для событий уровня сессии). id -> токен.
     tokens: dict[str, dict] = field(default_factory=dict)
+    # состояние боя (по образцу room-schema) и режим сцены — сессионное состояние
+    combat: dict = field(default_factory=lambda: {"active": False, "round": 0, "turnIndex": 0, "order": []})
+    mode: str = "explore"  # 'explore' | 'combat'
 
     def seed_tokens_if_empty(self):
         """Один раз кладёт стартовую раскладку, если токенов ещё нет."""
@@ -106,6 +109,8 @@ class Room:
         моменте они и так живут в памяти Room. Мерджим, не затирая прочие ключи."""
         state = db.get_game_state(self.room_id)
         state["tokens"] = list(self.tokens.values())
+        state["combat"] = self.combat
+        state["mode"] = self.mode
         db.save_game_state(self.room_id, state)
 
     async def broadcast(self, message: dict):
@@ -157,6 +162,10 @@ def get_room(room_id: str) -> Room:
             for t in saved:
                 if t.get("id"):
                     room.tokens[t["id"]] = dict(t)
+        if isinstance(state.get("combat"), dict):
+            room.combat = state["combat"]
+        if state.get("mode") in ("explore", "combat"):
+            room.mode = state["mode"]
         rooms[room_id] = room
     room.seed_tokens_if_empty()   # фолбэк: новая игра без сохранённой раскладки
     return room
@@ -195,6 +204,9 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     await ws.send_text(json.dumps({"type": "seat.updated", "seats": db.list_seats(room_id)}, ensure_ascii=False))
     # и текущая раскладка токенов сцены — чтобы новый клиент догнал карту (по образцу snapshot)
     await ws.send_text(json.dumps({"type": "tokens.snapshot", "tokens": list(room.tokens.values())}, ensure_ascii=False))
+    # и текущее состояние боя/режима сцены
+    await ws.send_text(json.dumps({"type": "combat.updated", "combat": room.combat}, ensure_ascii=False))
+    await ws.send_text(json.dumps({"type": "mode.set", "mode": room.mode}, ensure_ascii=False))
     # и его собственный персонаж (личное сообщение, по образцу log/catalog.snapshot)
     if character is not None:
         await ws.send_text(json.dumps({"type": "character.snapshot", "character": character}, ensure_ascii=False))
@@ -372,6 +384,69 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
         token["conditions"] = conds
         await room.broadcast({"type": "token.condition.changed", "tokenId": token["id"],
                               "conditions": conds})
+        room.persist_tokens()
+        return
+
+    # --- старт боя: сервер кидает инициативу (gm-only, бросок считает сервер) ---
+    if mtype == "combat.start":
+        if not require_gm(room.members.get(member_id)):
+            return
+        order = []
+        for tid in (msg.get("participants") or []):
+            tok = room.tokens.get(tid)
+            if not tok:
+                continue
+            # модификатор инициативы: из статблока (Ловкость), иначе 0
+            abil = (tok.get("statblock") or {}).get("abilities") or {}
+            dex = abil.get("dex")
+            dex_mod = (int(dex) - 10) // 2 if dex is not None else 0
+            roll = random.randint(1, 20) + dex_mod
+            order.append({"tokenId": tid, "name": tok.get("name", "?"),
+                          "initiative": roll, "dexMod": dex_mod})
+        # сортировка по инициативе (убыв.), ничьи — по Ловкости, затем стабильно
+        order.sort(key=lambda o: (-o["initiative"], -o["dexMod"]))
+        room.combat = {"active": True, "round": 1, "turnIndex": 0, "order": order}
+        room.mode = "combat"
+        await room.broadcast({"type": "combat.updated", "combat": room.combat})
+        await room.broadcast({"type": "mode.set", "mode": room.mode})
+        room.persist_tokens()  # combat/mode — сессионное состояние
+        return
+
+    # --- следующий ход (gm-only) ---
+    if mtype == "combat.next":
+        if not require_gm(room.members.get(member_id)):
+            return
+        c = room.combat
+        if not c.get("active") or not c.get("order"):
+            return
+        c["turnIndex"] += 1
+        if c["turnIndex"] >= len(c["order"]):
+            c["turnIndex"] = 0
+            c["round"] += 1            # полный круг — новый раунд
+        await room.broadcast({"type": "combat.updated", "combat": c})
+        room.persist_tokens()
+        return
+
+    # --- конец боя (gm-only) -> возврат в режим исследования ---
+    if mtype == "combat.end":
+        if not require_gm(room.members.get(member_id)):
+            return
+        room.combat = {"active": False, "round": 0, "turnIndex": 0, "order": []}
+        room.mode = "explore"
+        await room.broadcast({"type": "combat.updated", "combat": room.combat})
+        await room.broadcast({"type": "mode.set", "mode": room.mode})
+        room.persist_tokens()
+        return
+
+    # --- переключение режима сцены (gm-only) ---
+    if mtype == "mode.set":
+        if not require_gm(room.members.get(member_id)):
+            return
+        mode = msg.get("mode")
+        if mode not in ("explore", "combat"):
+            return
+        room.mode = mode
+        await room.broadcast({"type": "mode.set", "mode": mode})
         room.persist_tokens()
         return
 

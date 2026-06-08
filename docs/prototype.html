@@ -115,6 +115,22 @@
   .token.grabbing { cursor: grabbing; z-index: 30;
     box-shadow: 0 6px 16px rgba(0,0,0,.7), 0 0 0 3px rgba(201,162,83,.8); }
   .token.down { filter: grayscale(.7) brightness(.6); }
+  .token.turn { box-shadow: 0 0 0 3px var(--gold-bright), 0 0 14px rgba(232,200,120,.7); z-index: 20; }
+  /* трекер инициативы — оверлей справа сверху на сцене */
+  .initiative { position: absolute; top: 14px; right: 16px; z-index: 7; display: none;
+    min-width: 150px; background: linear-gradient(180deg, rgba(31,26,19,.96), rgba(20,16,11,.97));
+    border: 1px solid var(--gold); border-radius: 7px; padding: 8px; box-shadow: 0 4px 18px rgba(0,0,0,.7); }
+  .initiative.show { display: block; }
+  .init-head { font-family: 'Cinzel'; font-size: 12px; color: var(--gold-bright); letter-spacing: .05em;
+    text-align: center; margin-bottom: 6px; }
+  .init-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 4px;
+    font-size: 13px; color: var(--ink-dim); }
+  .init-row.current { background: rgba(201,162,83,.18); color: var(--ink); border: 1px solid var(--gold); }
+  .init-n { font-family: 'Cinzel'; color: var(--gold); width: 20px; text-align: center; }
+  .init-ctl { display: flex; gap: 5px; margin-top: 8px; }
+  .init-ctl button { flex: 1; font-family: 'Cinzel'; font-size: 10px; padding: 6px 4px; border-radius: 4px; cursor: pointer;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--edge-bright); color: var(--ink); }
+  .init-ctl button:hover { border-color: var(--gold); }
   .tok-name { pointer-events: none; }
   .tok-hp { position: absolute; left: 4px; right: 4px; bottom: 3px; height: 4px; border-radius: 2px;
     background: #2a1410; overflow: hidden; pointer-events: none; }
@@ -412,7 +428,7 @@
 
   <!-- LEFT NAV -->
   <div class="nav">
-    <div class="nav-mode">Режим: Исследование</div>
+    <div class="nav-mode" id="modeChip">Режим: Исследование</div>
     <div class="nav-tab active" data-view="map">Карта</div>
     <div class="nav-tab" data-view="journal">Дневник</div>
     <div class="nav-tab" data-view="quests">Задачи</div>
@@ -439,6 +455,8 @@
         <div class="zoom-lvl" id="zoomLvl">100%</div>
         <button id="zoomOut" title="Отдалить">−</button>
       </div>
+      <!-- трекер инициативы (виден в бою; renderCombat из store.combat) -->
+      <div class="initiative" id="initiativeTracker"></div>
     </div>
     <!-- sheet view -->
     <!-- карточка персонажа — наполняется renderSheet() из store.character -->
@@ -616,6 +634,8 @@
     roster: {},                   // charId -> { name, ... } для имён в партии
     me: null,                     // { role, member, char } — кто я (роль ветвит вид)
     tokens: [],                   // токены сцены от сервера {id,name,x,y,enemy,controlledBy}
+    combat: { active: false, round: 0, turnIndex: 0, order: [] },  // трекер боя (сервер)
+    mode: 'explore',              // 'explore' | 'combat' — режим сцены
   };
 
   // ===================================================================
@@ -721,6 +741,17 @@
     'token.condition.changed': (msg) => {
       const t = (store.tokens || []).find(x => x.id === msg.tokenId);
       if (t) { t.conditions = msg.conditions; renderTokens(); refreshTokenSheet(t.id); }
+    },
+    // состояние боя (инициатива/раунд/ход) — трекер + подсветка токена хода
+    'combat.updated': (msg) => {
+      store.combat = msg.combat || { active: false, round: 0, turnIndex: 0, order: [] };
+      renderCombat();
+      renderTokens();   // подсветить токен, чей ход
+    },
+    // режим сцены (исследование/бой) — оживляет индикатор слева
+    'mode.set': (msg) => {
+      store.mode = msg.mode || 'explore';
+      renderMode();
     },
   };
 
@@ -1476,7 +1507,16 @@
   });
   function dmAction(kind) {
     if (kind === 'npc') return dmCreateNpc();
-    console.log('[dm-console] TODO:', kind);   // check / scene / combat — следующие этапы
+    if (kind === 'combat') return dmToggleCombat();
+    console.log('[dm-console] TODO:', kind);   // check / scene — следующие этапы
+  }
+  // «Режим боя»: idle -> старт боя со ВСЕМИ токенами на карте; во время боя
+  // управление (след. ход / закончить) — в самом трекере инициативы.
+  function dmToggleCombat() {
+    if (store.combat.active) return;
+    const participants = (store.tokens || []).map(t => t.id);
+    if (!participants.length) return;
+    net.send({ type: 'combat.start', participants });
   }
   // минимальная форма NPC: имя/HP/AC/копии через prompt() — путь end-to-end
   function dmCreateNpc() {
@@ -1491,10 +1531,41 @@
     });
   }
 
+  // индикатор режима сцены (слева) — оживает от сервера (mode.set / combat)
+  function renderMode() {
+    const chip = document.getElementById('modeChip');
+    if (!chip) return;
+    const combat = store.mode === 'combat' || store.combat.active;
+    chip.textContent = combat ? 'Режим: Бой' : 'Режим: Исследование';
+    chip.style.borderColor = combat ? 'var(--blood)' : 'var(--gold)';
+    chip.style.color = combat ? '#d98a7a' : 'var(--gold-bright)';
+  }
+
+  // трекер инициативы: очередь, текущий ход, раунд; GM-кнопки next/end
+  function renderCombat() {
+    const el = document.getElementById('initiativeTracker');
+    if (!el) return;
+    const c = store.combat || {};
+    if (!c.active) { el.classList.remove('show'); el.innerHTML = ''; renderMode(); return; }
+    const isGm = store.me && store.me.role === 'gm';
+    let rows = (c.order || []).map((o, i) =>
+      `<div class="init-row${i === c.turnIndex ? ' current' : ''}"><span class="init-n">${o.initiative}</span>${esc(o.name)}</div>`).join('');
+    el.innerHTML = `<div class="init-head">⚔ Раунд ${c.round}</div>${rows}`
+      + (isGm ? `<div class="init-ctl"><button id="combatNext">След. ход</button><button id="combatEnd">Закончить</button></div>` : '');
+    el.classList.add('show');
+    if (isGm) {
+      document.getElementById('combatNext').onclick = () => net.send({ type: 'combat.next' });
+      document.getElementById('combatEnd').onclick = () => net.send({ type: 'combat.end' });
+    }
+    renderMode();
+  }
+
   // первичная отрисовка (пустые состояния) до прихода данных
   renderSheet();
   renderHotbar();
   renderParty();
+  renderCombat();
+  renderMode();
 
   // ростер персонажей (имена для подписей партии) — read-only из лобби-API
   fetch(`/api/games/${encodeURIComponent(net.room)}/characters`)
@@ -1540,9 +1611,12 @@
     const world = document.getElementById('mapWorld');
     if (!world) return;
     world.querySelectorAll('.token').forEach(el => el.remove());
+    const c = store.combat || {};
+    const turnId = (c.active && c.order && c.order[c.turnIndex]) ? c.order[c.turnIndex].tokenId : null;
     for (const t of (store.tokens || [])) {
       const el = document.createElement('div');
-      el.className = 'token' + (t.enemy ? ' enemy' : '') + (canMove(t) ? ' movable' : '') + (t.down ? ' down' : '');
+      el.className = 'token' + (t.enemy ? ' enemy' : '') + (canMove(t) ? ' movable' : '')
+        + (t.down ? ' down' : '') + (t.id === turnId ? ' turn' : '');
       el.dataset.id = t.id;
       el.dataset.x = t.x;      // клетка — источник истины
       el.dataset.y = t.y;
