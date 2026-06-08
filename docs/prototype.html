@@ -92,6 +92,13 @@
   .map-viewport.dragging { cursor: grabbing; }
   /* world — только носитель токенов; токены позиционируются от его origin (0,0) */
   .map-world { position: absolute; top: 0; left: 0; width: 0; height: 0; transform-origin: 0 0; }
+  /* фон активной сцены (картинка из библиотеки) — под сеткой/туманом/токенами */
+  .map-bg { position: absolute; top: 0; left: 0; width: 3000px; height: 2000px; pointer-events: none;
+    background-repeat: no-repeat; background-size: contain; background-position: top left; }
+  /* туман войны: слой под токенами; скрытые клетки — тёмные квадраты */
+  .fog-layer { position: absolute; top: 0; left: 0; pointer-events: none; }
+  .fog-cell { position: absolute; width: var(--grid); height: var(--grid); background: rgba(8,6,4,.94); }
+  .fog-layer.dev .fog-cell { background: rgba(8,6,4,.5); }   /* DM видит под туманом приглушённо */
   .map-label { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5;
     font-family: 'Cinzel'; font-size: 12px; letter-spacing: .15em; color: var(--ink-dim); text-transform: uppercase; }
   .grid-hint { position: absolute; bottom: 14px; right: 16px; z-index: 5; font-size: 11px; color: var(--ink-dim);
@@ -116,6 +123,25 @@
     box-shadow: 0 6px 16px rgba(0,0,0,.7), 0 0 0 3px rgba(201,162,83,.8); }
   .token.down { filter: grayscale(.7) brightness(.6); }
   .token.turn { box-shadow: 0 0 0 3px var(--gold-bright), 0 0 14px rgba(232,200,120,.7); z-index: 20; }
+  /* скрытый токен (виден только мастеру/в dev) — полупрозрачный с пометкой */
+  .token.hidden-tok { opacity: .45; }
+  .token.hidden-tok::after { content: '🚫'; position: absolute; top: -6px; left: -6px; font-size: 11px; }
+  /* палитра песочницы — оверлей слева на сцене, виден только в dev */
+  .dev-palette { position: absolute; top: 48px; left: 16px; z-index: 8; display: none; flex-direction: column; gap: 5px; }
+  .stage.dev .dev-palette { display: flex; }
+  .dev-tool { width: 34px; height: 34px; border-radius: 6px; cursor: pointer; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--edge-bright); }
+  .dev-tool:hover { border-color: var(--gold); }
+  .dev-tool.active { border-color: var(--gold-bright); background: rgba(201,162,83,.2); box-shadow: 0 0 8px rgba(201,162,83,.4); }
+  /* выбор шаблона NPC рядом с палитрой */
+  .npc-templates { position: absolute; top: 48px; left: 58px; z-index: 8; display: none; flex-direction: column; gap: 4px;
+    background: linear-gradient(180deg, rgba(31,26,19,.97), rgba(20,16,11,.98)); border: 1px solid var(--edge-bright);
+    border-radius: 6px; padding: 6px; }
+  .npc-templates.show { display: flex; }
+  .npc-templates button { font-family: 'Spectral'; font-size: 12px; padding: 5px 9px; border-radius: 4px; cursor: pointer;
+    background: #241c14; border: 1px solid var(--edge-bright); color: var(--ink-dim); text-align: left; white-space: nowrap; }
+  .npc-templates button.sel { color: var(--gold-bright); border-color: var(--gold); }
   /* трекер инициативы — оверлей справа сверху на сцене */
   .initiative { position: absolute; top: 14px; right: 16px; z-index: 7; display: none;
     min-width: 150px; background: linear-gradient(180deg, rgba(31,26,19,.96), rgba(20,16,11,.97));
@@ -448,7 +474,7 @@
       <!-- viewport обрезает, world таскается/масштабируется внутри -->
       <div class="map-viewport" id="mapViewport">
         <!-- токены создаёт renderTokens() из mapTokens (клетки -> пиксели) -->
-        <div class="map-world" id="mapWorld"></div>
+        <div class="map-world" id="mapWorld"><div class="map-bg" id="mapBg"></div><div class="fog-layer" id="fogLayer"></div></div>
       </div>
       <div class="zoom-ctl">
         <button id="zoomIn" title="Приблизить">+</button>
@@ -457,6 +483,19 @@
       </div>
       <!-- трекер инициативы (виден в бою; renderCombat из store.combat) -->
       <div class="initiative" id="initiativeTracker"></div>
+      <!-- палитра песочницы (только dev-режим; взаимоисключающие инструменты) -->
+      <div class="dev-palette" id="devPalette">
+        <div class="dev-tool" data-tool="token" title="Поставить токен">🔵</div>
+        <div class="dev-tool" data-tool="npc" title="Поставить NPC">👹</div>
+        <div class="dev-tool" data-tool="fog-reveal" title="Туман: открыть">🌥</div>
+        <div class="dev-tool" data-tool="fog-hide" title="Туман: скрыть">🌫</div>
+        <div class="dev-tool" data-tool="grid" title="Сетка">▦</div>
+        <div class="dev-tool" data-tool="scenes" title="Сцены">🗺</div>
+        <div class="dev-tool" data-tool="notes" title="Заметки мастера">📝</div>
+        <div class="dev-tool" data-tool="delete" title="Удалить">🗑</div>
+      </div>
+      <!-- выбор шаблона NPC (виден, когда активен инструмент NPC) -->
+      <div class="npc-templates" id="npcTemplates"></div>
     </div>
     <!-- sheet view -->
     <!-- карточка персонажа — наполняется renderSheet() из store.character -->
@@ -602,6 +641,26 @@
     <div class="win-body sheet" id="npcBody"></div>
   </div>
 </div>
+<!-- сцены песочницы: список/переключение/создание/фон -->
+<div class="win-back" id="sceneWin">
+  <div class="win">
+    <div class="win-head">
+      <h3>🗺 Сцены</h3>
+      <button class="win-x" id="sceneX">✕</button>
+    </div>
+    <div class="win-body" id="sceneBody"></div>
+  </div>
+</div>
+<!-- приватные заметки мастера (видны только GM, хранятся в БД) -->
+<div class="win-back" id="notesWin">
+  <div class="win">
+    <div class="win-head">
+      <h3>📝 Заметки мастера</h3>
+      <button class="win-x" id="notesX">✕</button>
+    </div>
+    <div class="win-body"><textarea id="notesArea" placeholder="Секреты, подготовка к сцене… (видно только вам)" style="width:100%;min-height:240px;background:var(--bg);border:1px solid var(--edge-bright);border-radius:6px;color:var(--ink);font-family:'Spectral';font-size:14px;padding:10px;resize:vertical;"></textarea></div>
+  </div>
+</div>
 
 <script>
   // ===================================================================
@@ -636,6 +695,10 @@
     tokens: [],                   // токены сцены от сервера {id,name,x,y,enemy,controlledBy}
     combat: { active: false, round: 0, turnIndex: 0, order: [] },  // трекер боя (сервер)
     mode: 'explore',              // 'explore' | 'combat' — режим сцены
+    fog: [],                      // открытые клетки тумана [[x,y],...] (сервер)
+    scenes: [],                   // список сцен [{id,name}] (сервер)
+    activeSceneId: null,          // id активной сцены
+    scene: { map: null, grid: { size: 48, offsetX: 0, offsetY: 0 } },  // активная сцена (фон/сетка)
   };
 
   // ===================================================================
@@ -650,9 +713,10 @@
     const role = q.get('role') || 'player';
     const name = q.get('name') || member;
     const char = q.get('char') || '';   // персонаж с экрана мест — отдаём серверу
+    const dev = q.get('dev') === '1';    // dev-режим песочницы (чисто клиентский)
 
     const api = {
-      room, member, role, name, char,
+      room, member, role, name, char, dev,
       ws: null,
       onMessage: null,        // назначается ниже: net.onMessage = fn(msg)
       send(obj) {
@@ -723,9 +787,14 @@
       store.tokens = msg.tokens || [];
       renderTokens();
     },
-    // новый токен (NPC, созданный мастером) — появляется у всех
+    // новый токен (NPC/расстановка мастером) — появляется у всех
     'token.added': (msg) => {
       if (msg.token) { store.tokens.push(msg.token); renderTokens(); }
+    },
+    // токен удалён мастером
+    'token.removed': (msg) => {
+      store.tokens = (store.tokens || []).filter(t => t.id !== msg.tokenId);
+      renderTokens();
     },
     // подтверждённое сервером перемещение (источник истины) — применяем ТУТ
     'token.moved': (msg) => {
@@ -752,6 +821,35 @@
     'mode.set': (msg) => {
       store.mode = msg.mode || 'explore';
       renderMode();
+    },
+    // туман войны: список открытых клеток — перерисовать оверлей
+    'fog.updated': (msg) => {
+      store.fog = msg.revealed || [];
+      renderFog();
+    },
+    // список сцен (+ активная) — для инструмента «Сцены»
+    'scene.list': (msg) => {
+      store.scenes = msg.scenes || [];
+      store.activeSceneId = msg.activeSceneId || store.activeSceneId;
+      renderScenesTool();
+    },
+    // переключение/полное состояние сцены: фон+сетка+токены+туман
+    'scene.switched': (msg) => {
+      store.activeSceneId = msg.sceneId;
+      applyScene(msg.state || {});
+    },
+    // изменены фон/сетка активной сцены
+    'scene.updated': (msg) => {
+      if (msg.sceneId !== store.activeSceneId) return;
+      if ('map' in msg) store.scene.map = msg.map;
+      if (msg.grid) store.scene.grid = msg.grid;
+      renderMapBg();
+      applyGrid(store.scene.grid);
+    },
+    // приватные заметки мастера (только gm их получает)
+    'notes.snapshot': (msg) => {
+      const ta = document.getElementById('notesArea');
+      if (ta) ta.value = msg.notes || '';
     },
   };
 
@@ -1040,7 +1138,7 @@
   document.getElementById('tabSpells').onclick = () => openWin('spellsWin', fillSpells);
   document.getElementById('tabInv').onclick = () => openWin('invWin', fillInv);
   document.getElementById('tabChar').onclick = () => openWin('charWin', fillChar);
-  for (const k of ['spells', 'inv', 'char', 'npc']) {
+  for (const k of ['spells', 'inv', 'char', 'npc', 'scene', 'notes']) {
     const back = document.getElementById(k + 'Win');
     document.getElementById(k + 'X').onclick = () => closeWin(k + 'Win');
     back.onclick = (e) => { if (e.target === back) closeWin(k + 'Win'); };   // клик по фону закрывает
@@ -1481,7 +1579,7 @@
   // is_gm и игнорирует gm-действия от игроков); клиентский view лишь
   // показывает разный UI из ОДНОГО файла. См. dm-layer-map.md, этап 0.
   // ===================================================================
-  store.me = { role: net.role, member: net.member, char: net.char };
+  store.me = { role: net.role, member: net.member, char: net.char, dev: net.dev };
 
   function applyRoleView() {
     const isGm = store.me && store.me.role === 'gm';
@@ -1500,6 +1598,64 @@
     }
   }
   applyRoleView();
+
+  // ===================================================================
+  // Песочница (dev-режим): палитра инструментов. activeTool — ЛОКАЛЬНЫЙ
+  // режим редактора (как пан/зум), не в store. Клики по карте смотрят на
+  // него (см. S3/S4). Песочница не вводит новых прав — те же gm-события.
+  // ===================================================================
+  let activeTool = null;
+  // S6: локальные шаблоны NPC (статблок по character-schema, npc:true)
+  const NPC_TEMPLATES = [
+    { name: 'Гоблин', ac: 15, hp: { current: 7, max: 7 }, abilities: { str: 8, dex: 14, con: 10 }, type: 'гуманоид (гоблиноид)', actions: [{ nameLocal: 'Скимитар', rolls: [{ label: 'Attack', notation: '1d20', type: 'attack', modifier: 4 }, { label: 'Damage', notation: '1d6', type: 'damage', damageType: 'slashing', modifier: 2 }] }] },
+    { name: 'Орк', ac: 13, hp: { current: 15, max: 15 }, abilities: { str: 16, dex: 12, con: 16 }, type: 'гуманоид (орк)', actions: [{ nameLocal: 'Секира', rolls: [{ label: 'Attack', notation: '1d20', type: 'attack', modifier: 5 }, { label: 'Damage', notation: '1d12', type: 'damage', damageType: 'slashing', modifier: 3 }] }] },
+    { name: 'Скелет', ac: 13, hp: { current: 13, max: 13 }, abilities: { str: 10, dex: 14, con: 15 }, type: 'нежить', actions: [{ nameLocal: 'Короткий меч', rolls: [{ label: 'Attack', notation: '1d20', type: 'attack', modifier: 4 }, { label: 'Damage', notation: '1d6', type: 'damage', damageType: 'piercing', modifier: 2 }] }] },
+  ];
+  let selectedNpc = 0;
+  function renderNpcTemplates() {
+    const panel = document.getElementById('npcTemplates');
+    if (!panel) return;
+    panel.innerHTML = '';
+    NPC_TEMPLATES.forEach((t, i) => {
+      const b = document.createElement('button');
+      b.textContent = `${t.name} (HP ${t.hp.max}, AC ${t.ac})`;
+      b.className = i === selectedNpc ? 'sel' : '';
+      b.onclick = () => { selectedNpc = i; renderNpcTemplates(); };
+      panel.appendChild(b);
+    });
+  }
+
+  if (store.me.dev) {
+    const stageEl = document.querySelector('.stage');
+    if (stageEl) stageEl.classList.add('dev');     // показывает .dev-palette
+    renderNpcTemplates();
+    document.querySelectorAll('.dev-tool').forEach(btn => {
+      btn.onclick = () => {
+        const t = btn.dataset.tool;
+        activeTool = (activeTool === t) ? null : t; // повторный клик — выключить
+        document.querySelectorAll('.dev-tool').forEach(b => b.classList.toggle('active', b.dataset.tool === activeTool));
+        document.getElementById('npcTemplates').classList.toggle('show', activeTool === 'npc');
+        if (activeTool === 'grid') openGridTool();
+        if (activeTool === 'scenes') openScenesTool();
+        if (activeTool === 'notes') openNotesTool();
+      };
+    });
+  }
+  // постановка NPC из ВЫБРАННОГО шаблона (S6) — тот же npc.create, что и в бою
+  function placeNpcAt(cx, cy) {
+    const tpl = NPC_TEMPLATES[selectedNpc] || NPC_TEMPLATES[0];
+    net.send({ type: 'npc.create', x: cx, y: cy, count: 1, statblock: JSON.parse(JSON.stringify(tpl)) });
+  }
+  // заметки мастера: окно с textarea; сохранение по вводу (дебаунс) через notes.set
+  function openNotesTool() { document.getElementById('notesWin').classList.add('show'); }
+  let notesTimer = null;
+  const notesArea = document.getElementById('notesArea');
+  if (notesArea) {
+    notesArea.oninput = () => {
+      clearTimeout(notesTimer);
+      notesTimer = setTimeout(() => net.send({ type: 'notes.set', notes: notesArea.value }), 500);
+    };
+  }
 
   // Пульт мастера (gm-only по виду; сервер всё равно проверяет права).
   document.querySelectorAll('.dm-btn').forEach(b => {
@@ -1566,6 +1722,7 @@
   renderParty();
   renderCombat();
   renderMode();
+  // renderFog() — после объявления GRID, в секции карты (см. ниже)
 
   // ростер персонажей (имена для подписей партии) — read-only из лобби-API
   fetch(`/api/games/${encodeURIComponent(net.room)}/characters`)
@@ -1596,7 +1753,33 @@
   // token.move и рисует подтверждённый сервером token.moved — НЕ двигает
   // «на веру». Право двигать определяет controlledBy (см. canMove).
   // ===================================================================
-  const GRID = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--grid')) || 48;
+  // GRID/смещение — динамические (меняются со сценой, см. applyGrid в S5)
+  let GRID = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--grid')) || 48;
+  let GRID_OFFSET = { x: 0, y: 0 };
+  let applyMapView = null;        // ссылка на apply() из IIFE карты (для applyGrid)
+
+  // Туман: тёмные квадраты на СКРЫТЫХ клетках в пределах мира. revealed —
+  // открытые клетки (из store.fog). В dev DM видит под туманом приглушённо.
+  function renderFog() {
+    const layer = document.getElementById('fogLayer');
+    if (!layer) return;
+    const FOG_COLS = 64, FOG_ROWS = 44;   // экстент мира в клетках (под map-world 3000x2000)
+    const revealed = new Set((store.fog || []).map(c => c[0] + ',' + c[1]));
+    layer.classList.toggle('dev', !!(store.me && store.me.dev));
+    const frag = document.createDocumentFragment();
+    for (let y = 0; y < FOG_ROWS; y++) {
+      for (let x = 0; x < FOG_COLS; x++) {
+        if (revealed.has(x + ',' + y)) continue;   // открытая клетка — без тумана
+        const cell = document.createElement('div');
+        cell.className = 'fog-cell';
+        cell.style.left = (x * GRID + GRID_OFFSET.x) + 'px';
+        cell.style.top = (y * GRID + GRID_OFFSET.y) + 'px';
+        frag.appendChild(cell);
+      }
+    }
+    layer.innerHTML = '';
+    layer.appendChild(frag);
+  }
 
   // вправе ли ЭТОТ клиент двигать токен t — логика совпадает с серверной:
   // GM двигает любой; игрок — только свой (controlledBy == его member).
@@ -1614,14 +1797,18 @@
     const c = store.combat || {};
     const turnId = (c.active && c.order && c.order[c.turnIndex]) ? c.order[c.turnIndex].tokenId : null;
     for (const t of (store.tokens || [])) {
+      const dev = store.me && store.me.dev;
+      // скрытый токен: вне dev игрокам его рисовать не должны (фильтрует сервер),
+      // но DM/dev видит его помеченным (полупрозрачным), а не пропущенным
+      if (t.hidden && !dev && !(store.me && store.me.role === 'gm')) continue;
       const el = document.createElement('div');
       el.className = 'token' + (t.enemy ? ' enemy' : '') + (canMove(t) ? ' movable' : '')
-        + (t.down ? ' down' : '') + (t.id === turnId ? ' turn' : '');
+        + (t.down ? ' down' : '') + (t.id === turnId ? ' turn' : '') + (t.hidden ? ' hidden-tok' : '');
       el.dataset.id = t.id;
       el.dataset.x = t.x;      // клетка — источник истины
       el.dataset.y = t.y;
-      el.style.left = (t.x * GRID) + 'px';   // пиксель считает клиент из GRID
-      el.style.top  = (t.y * GRID) + 'px';
+      el.style.left = (t.x * GRID + GRID_OFFSET.x) + 'px';   // пиксель из GRID + смещение сцены
+      el.style.top  = (t.y * GRID + GRID_OFFSET.y) + 'px';
       // имя + HP-бар + состояния + маркер выбывания
       const nm = document.createElement('span'); nm.className = 'tok-name'; nm.textContent = t.name;
       el.appendChild(nm);
@@ -1646,6 +1833,47 @@
     }
   }
   renderTokens();
+  renderFog();   // первичная отрисовка тумана (GRID уже объявлен выше)
+
+  // ---- сцены (S5): фон-карта, сетка, переключение ----
+  function renderMapBg() {
+    const bg = document.getElementById('mapBg');
+    if (bg) bg.style.backgroundImage = store.scene.map ? `url(${store.scene.map})` : 'none';
+  }
+  function applyGrid(grid) {
+    GRID = (grid && grid.size) || 48;
+    GRID_OFFSET = { x: (grid && grid.offsetX) || 0, y: (grid && grid.offsetY) || 0 };
+    document.documentElement.style.setProperty('--grid', GRID + 'px');  // токены/фог-клетки тоже из --grid
+    if (applyMapView) applyMapView();   // фон-сетка viewport
+    renderTokens();
+    renderFog();
+  }
+  function applyScene(state) {
+    store.tokens = state.tokens || [];
+    store.fog = state.fog || [];
+    store.scene = { map: state.map || null, grid: state.grid || { size: 48, offsetX: 0, offsetY: 0 } };
+    renderMapBg();
+    applyGrid(store.scene.grid);        // пересобирает токены/фог под новую сетку
+  }
+  function renderScenesTool() {
+    const body = document.getElementById('sceneBody');
+    if (!body) return;
+    body.innerHTML = (store.scenes || []).map(s =>
+      `<div class="spell-row" data-sid="${s.id}"><div class="spell-main"><div class="spell-name">${esc(s.name)}${s.id === store.activeSceneId ? ' ✦' : ''}</div></div></div>`).join('')
+      + '<div class="tok-controls"><button class="tok-cond-btn" id="sceneNew">＋ Новая сцена</button><button class="tok-cond-btn" id="sceneMap">Задать фон</button></div>';
+    body.querySelectorAll('[data-sid]').forEach(r => r.onclick = () => net.send({ type: 'scene.switch', sceneId: r.dataset.sid }));
+    document.getElementById('sceneNew').onclick = () => { const n = prompt('Имя сцены', 'Подземелье'); if (n) net.send({ type: 'scene.create', name: n }); };
+    document.getElementById('sceneMap').onclick = () => { const m = prompt('Путь к фону (из библиотеки)', store.scene.map || 'assets/maps/'); if (m !== null) net.send({ type: 'scene.config', sceneId: store.activeSceneId, map: m }); };
+  }
+  function openScenesTool() { renderScenesTool(); document.getElementById('sceneWin').classList.add('show'); }
+  function openGridTool() {
+    const g = store.scene.grid || { size: 48, offsetX: 0, offsetY: 0 };
+    const size = parseInt(prompt('Размер клетки (px)', g.size), 10);
+    if (!size) return;
+    const ox = parseInt(prompt('Смещение сетки X (px)', g.offsetX || 0), 10) || 0;
+    const oy = parseInt(prompt('Смещение сетки Y (px)', g.offsetY || 0), 10) || 0;
+    net.send({ type: 'scene.config', sceneId: store.activeSceneId, grid: { size, offsetX: ox, offsetY: oy } });
+  }
 
   // ===================================================================
   // Карта — ЛОКАЛЬНЫЙ пан/зум вида клиента. Состояние в переменной view,
@@ -1662,13 +1890,14 @@
 
     function apply() {
       world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`;
-      // неподвижная сетка vp: шаг привязан к зуму, сдвиг — к пану,
-      // тот же GRID и view, что у токенов → сетка и токены совпадают
+      // неподвижная сетка vp: шаг привязан к зуму, сдвиг — к пану + смещению сцены,
+      // тот же GRID/offset, что у токенов → сетка и токены совпадают
       const g = GRID * view.zoom;
       vp.style.backgroundSize = `${g}px ${g}px`;
-      vp.style.backgroundPosition = `${view.x}px ${view.y}px`;
+      vp.style.backgroundPosition = `${view.x + GRID_OFFSET.x * view.zoom}px ${view.y + GRID_OFFSET.y * view.zoom}px`;
       if (zlvl) zlvl.textContent = Math.round(view.zoom * 100) + '%';
     }
+    applyMapView = apply;   // даём applyGrid (S5) перерисовывать вид при смене сетки
     apply();
 
     const clampZoom = (z) => Math.min(MAX, Math.max(MIN, z));
@@ -1691,20 +1920,62 @@
       zoomTo(e.clientX - rect.left, e.clientY - rect.top, e.deltaY < 0 ? 1.1 : 0.9);
     }, { passive: false });
 
+    // экран -> клетка мира (для инструментов песочницы)
+    function screenToCell(clientX, clientY) {
+      const rect = vp.getBoundingClientRect();
+      const wx = (clientX - rect.left - view.x) / view.zoom;
+      const wy = (clientY - rect.top - view.y) / view.zoom;
+      return [Math.floor((wx - GRID_OFFSET.x) / GRID), Math.floor((wy - GRID_OFFSET.y) / GRID)];
+    }
+    // dispatcher инструментов палитры на чистый клик по карте (S3/S4/S6)
+    function mapToolClick(clientX, clientY) {
+      const [cx, cy] = screenToCell(clientX, clientY);
+      if (activeTool === 'token') {
+        net.send({ type: 'token.add', token: { name: 'Токен', x: cx, y: cy } });
+      } else if (activeTool === 'npc') {
+        placeNpcAt(cx, cy);                  // S6: из выбранного шаблона
+      }
+      // fog-reveal/fog-hide обрабатываются кистью (S4) на mousemove/mouseup
+    }
+
+    // кисть тумана: копим задетые клетки во время протаскивания, шлём пачкой
+    let fogCells = null;
+    function fogBrushStart(e) { fogCells = new Set(); fogBrushMove(e); }
+    function fogBrushMove(e) {
+      if (!fogCells) return;
+      const [cx, cy] = screenToCell(e.clientX, e.clientY);
+      fogCells.add(cx + ',' + cy);
+    }
+    function fogBrushEnd() {
+      if (!fogCells || !fogCells.size) { fogCells = null; return; }
+      const cells = [...fogCells].map(s => s.split(',').map(Number));
+      net.send({ type: activeTool === 'fog-reveal' ? 'fog.reveal' : 'fog.hide', cells });
+      fogCells = null;
+    }
+
     // пан — таскание по пустому месту (по токену не панить)
     let drag = null;
     vp.addEventListener('mousedown', (e) => {
       if (e.target.closest('.token')) return;
-      drag = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y };
+      drag = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false };
       vp.classList.add('dragging');
+      if (activeTool === 'fog-reveal' || activeTool === 'fog-hide') fogBrushStart(e);
     });
     window.addEventListener('mousemove', (e) => {
       if (!drag) return;
+      if (Math.abs(e.clientX - drag.sx) > 4 || Math.abs(e.clientY - drag.sy) > 4) drag.moved = true;
+      if (activeTool === 'fog-reveal' || activeTool === 'fog-hide') { fogBrushMove(e); return; }  // кисть тумана не панит
+      if (activeTool) return;               // в режиме инструмента карту не панорамируем
       view.x = drag.ox + (e.clientX - drag.sx);
       view.y = drag.oy + (e.clientY - drag.sy);
       apply();
     });
-    window.addEventListener('mouseup', () => { drag = null; vp.classList.remove('dragging'); });
+    window.addEventListener('mouseup', (e) => {
+      if (!drag) return;
+      const d = drag; drag = null; vp.classList.remove('dragging');
+      if (activeTool === 'fog-reveal' || activeTool === 'fog-hide') { fogBrushEnd(); return; }
+      if (activeTool && !d.moved) mapToolClick(d.sx, d.sy);   // чистый клик инструментом
+    });
 
     // --- перетаскивание ТОКЕНА (отдельно от пана) ---
     // Тащить можно только свои токены (.movable). Drag — это лишь НАМЕРЕНИЕ:
@@ -1712,6 +1983,11 @@
     let tokDrag = null;
     const CLICK_EPS = 4;                    // порог: меньше сдвига — это клик, не drag
     vp.addEventListener('mousedown', (e) => {
+      const tokEl = e.target.closest('.token');
+      if (activeTool) {                      // в режиме инструмента токены не таскаем
+        if (activeTool === 'delete' && tokEl) { e.stopPropagation(); net.send({ type: 'token.remove', tokenId: tokEl.dataset.id }); }
+        return;
+      }
       const el = e.target.closest('.token.movable');
       if (!el) return;
       e.stopPropagation();                 // не стартуем пан карты

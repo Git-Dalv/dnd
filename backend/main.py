@@ -82,6 +82,9 @@ DEFAULT_TOKENS = [
 ]
 
 
+DEFAULT_GRID = {"size": 48, "offsetX": 0, "offsetY": 0}
+
+
 @dataclass
 class Room:
     room_id: str
@@ -89,28 +92,68 @@ class Room:
     gm_id: str | None = None
     members: dict[str, Member] = field(default_factory=dict)
     log: list = field(default_factory=list)
-    # позиции токенов — событие «тика», держим ТОЛЬКО в памяти Room, в БД на каждый
-    # ход НЕ пишем (db.py — для событий уровня сессии). id -> токен.
-    tokens: dict[str, dict] = field(default_factory=dict)
     # состояние боя (по образцу room-schema) и режим сцены — сессионное состояние
     combat: dict = field(default_factory=lambda: {"active": False, "round": 0, "turnIndex": 0, "order": []})
     mode: str = "explore"  # 'explore' | 'combat'
+    # сцены: токены/туман живут В АКТИВНОЙ сцене. tokens/fog делегируют туда —
+    # обработчики token.*/fog.* остаются без изменений. id -> сцена.
+    scenes: dict[str, dict] = field(default_factory=dict)
+    active_scene_id: str | None = None
+    notes: str = ""   # приватные заметки мастера (видны только gm, в БД)
+
+    def ensure_scene(self) -> dict:
+        """Гарантирует наличие активной сцены (дефолтная — со стартовой раскладкой)."""
+        if not self.scenes:
+            self.scenes["scene_default"] = {
+                "id": "scene_default", "name": "Сцена 1", "map": None,
+                "grid": dict(DEFAULT_GRID),
+                "tokens": {t["id"]: dict(t) for t in DEFAULT_TOKENS},
+                "fog": set(),
+            }
+        if self.active_scene_id not in self.scenes:
+            self.active_scene_id = next(iter(self.scenes))
+        return self.scenes[self.active_scene_id]
+
+    @property
+    def tokens(self) -> dict:           # позиции токенов АКТИВНОЙ сцены (в памяти, «тик»)
+        return self.ensure_scene()["tokens"]
+
+    @property
+    def fog(self) -> set:               # открытые клетки тумана АКТИВНОЙ сцены
+        return self.ensure_scene()["fog"]
+
+    def fog_list(self):
+        return [[x, y] for (x, y) in self.fog]
 
     def seed_tokens_if_empty(self):
-        """Один раз кладёт стартовую раскладку, если токенов ещё нет."""
-        if not self.tokens:
-            for t in DEFAULT_TOKENS:
-                self.tokens[t["id"]] = dict(t)
+        self.ensure_scene()             # достаточно гарантировать дефолтную сцену
+
+    def scene_state(self, sid: str) -> dict:
+        s = self.scenes[sid]
+        return {"id": s["id"], "name": s["name"], "map": s.get("map"),
+                "grid": s.get("grid", dict(DEFAULT_GRID)),
+                "tokens": list(s["tokens"].values()),
+                "fog": [[x, y] for (x, y) in s["fog"]]}
+
+    def scene_list(self) -> dict:
+        return {"scenes": [{"id": s["id"], "name": s["name"]} for s in self.scenes.values()],
+                "activeSceneId": self.active_scene_id}
 
     def persist_tokens(self):
-        """Снапшот раскладки токенов в БД на СЕССИОННЫХ событиях (дисконнект GM,
-        создание NPC, конец боя). НЕ зовём на каждый token.move: позиции — это
-        событие «тика», частая запись в БД била бы по производительности; в
-        моменте они и так живут в памяти Room. Мерджим, не затирая прочие ключи."""
+        """Снапшот сцен в БД на СЕССИОННЫХ событиях (дисконнект GM, NPC, бой, сцены).
+        НЕ зовём на каждый token.move (позиции — «тик»). Мерджим в state."""
         state = db.get_game_state(self.room_id)
-        state["tokens"] = list(self.tokens.values())
+        state["scenes"] = [
+            {"id": s["id"], "name": s["name"], "map": s.get("map"),
+             "grid": s.get("grid", dict(DEFAULT_GRID)),
+             "tokens": list(s["tokens"].values()),
+             "fog": [[x, y] for (x, y) in s["fog"]]}
+            for s in self.scenes.values()
+        ]
+        state["activeSceneId"] = self.active_scene_id
         state["combat"] = self.combat
         state["mode"] = self.mode
+        state["notes"] = self.notes
         db.save_game_state(self.room_id, state)
 
     async def broadcast(self, message: dict):
@@ -155,17 +198,35 @@ def get_room(room_id: str) -> Room:
                 room.name = g["name"]
                 room.gm_id = g["gmId"]
                 break
-        # токены поднимаем из сохранённого состояния игры; сид — только фолбэк
+        # сцены поднимаем из сохранённого состояния; сид — только фолбэк
         state = db.get_game_state(room_id)
-        saved = state.get("tokens")
-        if isinstance(saved, list) and saved:
-            for t in saved:
-                if t.get("id"):
-                    room.tokens[t["id"]] = dict(t)
+        scenes = state.get("scenes")
+        if isinstance(scenes, list) and scenes:
+            for s in scenes:
+                sid = s.get("id")
+                if not sid:
+                    continue
+                room.scenes[sid] = {
+                    "id": sid, "name": s.get("name", "Сцена"), "map": s.get("map"),
+                    "grid": s.get("grid") or dict(DEFAULT_GRID),
+                    "tokens": {t["id"]: dict(t) for t in (s.get("tokens") or []) if t.get("id")},
+                    "fog": set((int(c[0]), int(c[1])) for c in (s.get("fog") or []) if len(c) == 2),
+                }
+            room.active_scene_id = state.get("activeSceneId") or next(iter(room.scenes))
+        elif isinstance(state.get("tokens"), list) and state["tokens"]:
+            # миграция старого «плоского» состояния (до сцен) в дефолтную сцену
+            room.scenes["scene_default"] = {
+                "id": "scene_default", "name": "Сцена 1", "map": None, "grid": dict(DEFAULT_GRID),
+                "tokens": {t["id"]: dict(t) for t in state["tokens"] if t.get("id")},
+                "fog": set((int(c[0]), int(c[1])) for c in (state.get("fog") or []) if len(c) == 2),
+            }
+            room.active_scene_id = "scene_default"
         if isinstance(state.get("combat"), dict):
             room.combat = state["combat"]
         if state.get("mode") in ("explore", "combat"):
             room.mode = state["mode"]
+        if isinstance(state.get("notes"), str):
+            room.notes = state["notes"]
         rooms[room_id] = room
     room.seed_tokens_if_empty()   # фолбэк: новая игра без сохранённой раскладки
     return room
@@ -202,11 +263,17 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     await ws.send_text(json.dumps({"type": "log.snapshot", "log": room.log[-50:]}, ensure_ascii=False))
     # и текущий состав мест из БД (если игра существует)
     await ws.send_text(json.dumps({"type": "seat.updated", "seats": db.list_seats(room_id)}, ensure_ascii=False))
-    # и текущая раскладка токенов сцены — чтобы новый клиент догнал карту (по образцу snapshot)
-    await ws.send_text(json.dumps({"type": "tokens.snapshot", "tokens": list(room.tokens.values())}, ensure_ascii=False))
+    # список сцен и ПОЛНОЕ состояние активной сцены (фон, сетка, токены, туман) —
+    # новый клиент догоняет карту целиком (scene.switched несёт tokens+fog)
+    await ws.send_text(json.dumps({"type": "scene.list", **room.scene_list()}, ensure_ascii=False))
+    await ws.send_text(json.dumps({"type": "scene.switched", "sceneId": room.active_scene_id,
+                                   "state": room.scene_state(room.active_scene_id)}, ensure_ascii=False))
     # и текущее состояние боя/режима сцены
     await ws.send_text(json.dumps({"type": "combat.updated", "combat": room.combat}, ensure_ascii=False))
     await ws.send_text(json.dumps({"type": "mode.set", "mode": room.mode}, ensure_ascii=False))
+    # приватные заметки мастера — только мастеру (игрокам не шлём)
+    if role == "gm":
+        await ws.send_text(json.dumps({"type": "notes.snapshot", "notes": room.notes}, ensure_ascii=False))
     # и его собственный персонаж (личное сообщение, по образцу log/catalog.snapshot)
     if character is not None:
         await ws.send_text(json.dumps({"type": "character.snapshot", "character": character}, ensure_ascii=False))
@@ -385,6 +452,108 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
         await room.broadcast({"type": "token.condition.changed", "tokenId": token["id"],
                               "conditions": conds})
         room.persist_tokens()
+        return
+
+    # --- туман войны (gm-only): кисть открыть/скрыть клетки ---
+    if mtype in ("fog.reveal", "fog.hide"):
+        if not require_gm(room.members.get(member_id)):
+            return
+        reveal = mtype == "fog.reveal"
+        for c in (msg.get("cells") or []):
+            try:
+                x = max(0, min(GRID_MAX, int(c[0])))
+                y = max(0, min(GRID_MAX, int(c[1])))
+            except (TypeError, ValueError, IndexError):
+                continue
+            if reveal:
+                room.fog.add((x, y))
+            else:
+                room.fog.discard((x, y))
+        await room.broadcast({"type": "fog.updated", "revealed": room.fog_list()})
+        room.persist_tokens()
+        return
+
+    # --- приватные заметки мастера (gm-only): храним в БД, игрокам НЕ шлём ---
+    if mtype == "notes.set":
+        if not require_gm(room.members.get(member_id)):
+            return
+        room.notes = str(msg.get("notes", ""))
+        room.persist_tokens()                 # пишем в games.state
+        return
+
+    # --- сцены (gm-only): создать / переключить / настроить фон-сетку ---
+    if mtype == "scene.create":
+        if not require_gm(room.members.get(member_id)):
+            return
+        sid = "scene_" + secrets.token_hex(3)
+        room.scenes[sid] = {"id": sid, "name": msg.get("name") or "Новая сцена",
+                            "map": msg.get("map"), "grid": dict(DEFAULT_GRID),
+                            "tokens": {}, "fog": set()}
+        await room.broadcast({"type": "scene.list", **room.scene_list()})
+        room.persist_tokens()
+        return
+
+    if mtype == "scene.switch":
+        if not require_gm(room.members.get(member_id)):
+            return
+        sid = msg.get("sceneId")
+        if sid not in room.scenes:
+            return
+        room.active_scene_id = sid
+        await room.broadcast({"type": "scene.switched", "sceneId": sid, "state": room.scene_state(sid)})
+        await room.broadcast({"type": "scene.list", **room.scene_list()})
+        room.persist_tokens()
+        return
+
+    if mtype == "scene.config":
+        if not require_gm(room.members.get(member_id)):
+            return
+        s = room.scenes.get(msg.get("sceneId"))
+        if not s:
+            return
+        if "map" in msg:
+            s["map"] = msg.get("map")
+        if isinstance(msg.get("grid"), dict):
+            g = s.get("grid", dict(DEFAULT_GRID))
+            for k in ("size", "offsetX", "offsetY"):
+                if msg["grid"].get(k) is not None:
+                    try:
+                        g[k] = int(msg["grid"][k])
+                    except (TypeError, ValueError):
+                        pass
+            s["grid"] = g
+        await room.broadcast({"type": "scene.updated", "sceneId": s["id"], "map": s.get("map"), "grid": s.get("grid")})
+        room.persist_tokens()
+        return
+
+    # --- добавить токен (gm-only): расстановка из песочницы/игры ---
+    if mtype == "token.add":
+        if not require_gm(room.members.get(member_id)):
+            return
+        t = dict(msg.get("token") or {})
+        t["id"] = t.get("id") or ("tok_" + secrets.token_hex(3))
+        t.setdefault("controlledBy", "gm")
+        t.setdefault("enemy", False)
+        t.setdefault("name", "Токен")
+        try:
+            t["x"] = max(0, min(GRID_MAX, int(t.get("x", 0))))
+            t["y"] = max(0, min(GRID_MAX, int(t.get("y", 0))))
+        except (TypeError, ValueError):
+            return
+        room.tokens[t["id"]] = t
+        room.persist_tokens()
+        await room.broadcast({"type": "token.added", "token": t})
+        return
+
+    # --- удалить токен (gm-only) ---
+    if mtype == "token.remove":
+        if not require_gm(room.members.get(member_id)):
+            return
+        tid = msg.get("tokenId")
+        if tid in room.tokens:
+            del room.tokens[tid]
+            room.persist_tokens()
+            await room.broadcast({"type": "token.removed", "tokenId": tid})
         return
 
     # --- старт боя: сервер кидает инициативу (gm-only, бросок считает сервер) ---
