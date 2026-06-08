@@ -6,7 +6,9 @@ VTT backend — минимальный каркас.
 Это старт под «вертикальный срез»: dice.roll -> сервер кидает -> dice.rolled всем.
 Дальше навешиваются token.move, scene.switch, combat.*, whisper.* по тому же паттерну.
 """
+import copy
 import json
+import math
 import random
 import re
 import secrets
@@ -56,6 +58,64 @@ def roll_dice(notation: str, modifier: int = 0):
         raise ValueError("out of range")
     rolls = [random.randint(1, sides) for _ in range(count)]
     return rolls, sum(rolls) + modifier
+
+
+def _round_half_up(x: float) -> int:
+    """Округление .5 ВВЕРХ (как JS Math.round) — чтобы серверный расчёт и
+    клиентское превью пересчёта совпадали до единицы. Python round() банкирский,
+    он бы расходился с фронтом."""
+    return math.floor(x + 0.5)
+
+
+# Ведущее "NdM" в нотации урона ("2d6", "1d8"…) — для умножения числа кубиков.
+_DMG_DICE_RE = re.compile(r"^(\d+)d(\d+)", re.I)
+
+
+def scale_statblock(statblock: dict, level: int) -> dict:
+    """Масштабирует статблок существа под «уровень» (homebrew-баланс).
+
+    level=1 — базовый статблок БЕЗ изменений; дальше существо крепчает. Все
+    коэффициенты собраны ЗДЕСЬ — это игровой баланс «для себя», правится в одном
+    месте. round — половинка вверх (см. _round_half_up), чтобы серверный расчёт
+    совпал с превью на клиенте. Формула:
+      • HP (max и current): base * (1 + 0.5*(level-1))   ≈ +50% за уровень
+      • AC: base + (level-1)//2                          каждые 2 уровня +1
+      • action.rolls type "attack": modifier += (level-1)//2
+      • action.rolls type "damage": число кубиков *= max(1, round(level/2)),
+        modifier += (level-1)   (1d6 → на ур.3 = 2d6)
+      • abilities — без изменений
+    Возвращает НОВЫЙ статблок (вход не мутируется)."""
+    level = max(1, min(20, int(level)))
+    sb = copy.deepcopy(statblock)
+    if level == 1:
+        return sb                                   # базовый статблок как есть
+
+    factor = 1 + 0.5 * (level - 1)
+    hp = sb.get("hp") or {}
+    if hp:
+        base_max = int(hp.get("max") or hp.get("current") or 0)
+        base_cur = int(hp.get("current", base_max))
+        sb["hp"] = {"max": _round_half_up(base_max * factor),
+                    "current": _round_half_up(base_cur * factor)}
+    if sb.get("ac") is not None:
+        try:
+            sb["ac"] = int(sb["ac"]) + (level - 1) // 2
+        except (TypeError, ValueError):
+            pass
+
+    dice_mult = max(1, _round_half_up(level / 2))    # кубики урона ≈ ×(level/2)
+    for action in sb.get("actions") or []:
+        for roll in action.get("rolls") or []:
+            rtype = roll.get("type")
+            if rtype == "attack":
+                roll["modifier"] = int(roll.get("modifier", 0)) + (level - 1) // 2
+            elif rtype == "damage":
+                m = _DMG_DICE_RE.match(str(roll.get("notation", "")))
+                if m:
+                    count, sides = int(m.group(1)), int(m.group(2))
+                    roll["notation"] = f"{count * dice_mult}d{sides}"
+                roll["modifier"] = int(roll.get("modifier", 0)) + (level - 1)
+    return sb
 
 
 @dataclass
@@ -751,6 +811,15 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
         if not require_gm(room.members.get(member_id)):
             return  # gm-only: игроку молча отказываем
         statblock = dict(msg.get("statblock") or {})
+        # «уровень» существа — множитель статблока. Источник истины — СЕРВЕР:
+        # клиент шлёт только level, пересчёт делает scale_statblock (клиентское
+        # превью — лишь подсказка GM, на сцену кладётся посчитанное здесь).
+        try:
+            level = max(1, min(20, int(msg.get("level", 1))))
+        except (TypeError, ValueError):
+            level = 1
+        if level > 1:
+            statblock = scale_statblock(statblock, level)
         statblock["npc"] = True                       # единая структура с character-schema
         base_name = statblock.get("name") or "NPC"
         try:
@@ -772,7 +841,7 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
             hp = dict(statblock.get("hp") or {"current": 1, "max": 1})
             tok = {"id": tok_id, "name": name, "x": x, "y": y, "enemy": True,
                    "controlledBy": "gm", "statblock": dict(statblock),
-                   "hp": hp, "conditions": [], "down": False}
+                   "hp": hp, "conditions": [], "down": False, "level": level}
             room.tokens[tok_id] = tok
             added.append(tok)
         room.persist_tokens()                          # сессионное событие — сохраняем

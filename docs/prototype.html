@@ -461,6 +461,11 @@
     border-radius: 5px; cursor: pointer; font-weight: 700; color: #1a140a; border: 1px solid var(--gold);
     background: linear-gradient(180deg, var(--gold-bright), #6a4a18); }
   .creature-place-btn:hover { box-shadow: 0 0 12px rgba(232,200,120,.5); }
+  .level-ctl { margin: 12px 0 4px; padding: 10px 12px; border: 1px solid var(--edge-bright); border-radius: 6px; background: #1b1610; }
+  .level-ctl label { display: block; font-family: 'Cinzel'; font-size: 12px; color: var(--ink); margin-bottom: 6px; }
+  .level-ctl label b { color: var(--gold-bright); font-size: 14px; }
+  .level-ctl input[type=range] { width: 100%; accent-color: var(--gold); cursor: pointer; }
+  .level-hint { font-size: 10px; color: var(--ink-dim); margin-top: 4px; font-style: italic; }
   .codex-list { flex: 1; overflow-y: auto; padding: 0 8px 12px; display: flex; flex-direction: column; gap: 5px; }
   .codex-row { display: flex; align-items: center; gap: 9px; padding: 7px 8px;
     border: 1px solid transparent; border-radius: 5px; cursor: pointer; transition: all .12s; }
@@ -1424,6 +1429,8 @@
     const base = t.statblock ? Object.assign({ name: t.name }, t.statblock) : { name: t.name };
     if (t.hp) base.hp = t.hp;                   // живой HP с токена (а не из статблока)
     let html = sheetHtml(base);
+    if (t.level && t.level > 1) html += `<div class="sheet-row"><b>Уровень:</b> ${t.level}</div>`;
+    if (base.statblock || base.npc) html += actionsRollsHtml(base);   // полный разбор бросков (виден урон)
     if ((t.conditions || []).length) html += `<div class="sheet-row"><b>Состояния:</b> ${esc(t.conditions.join(', '))}</div>`;
     if (t.down) html += `<div class="sheet-row" style="color:#d98a7a;"><b>Выбыл</b></div>`;
     const isGm = store.me && store.me.role === 'gm';
@@ -1852,12 +1859,52 @@
     closeBestiary();
   }
 
-  // детальный вид существа: портрет + описание + статблок (sheetHtml) + «Разместить».
-  // Вход в промпт 5 — там сюда добавится слайдер уровня.
+  // ПРЕВЬЮ масштабирования — ТА ЖЕ формула, что scale_statblock на сервере.
+  // ВАЖНО: это только подсказка GM; на сцену кладёт сервер по присланному level.
+  // round — половинка вверх (Math.round), как _round_half_up на сервере, чтобы
+  // превью совпало с серверным расчётом до единицы. Правишь баланс — правь ОБА.
+  function previewScale(sb, level) {
+    level = Math.max(1, Math.min(20, level | 0));
+    const out = JSON.parse(JSON.stringify(sb || {}));
+    if (level === 1) return out;
+    const factor = 1 + 0.5 * (level - 1);
+    if (out.hp) {
+      const bmax = (out.hp.max ?? out.hp.current ?? 0) | 0;
+      const bcur = (out.hp.current ?? bmax) | 0;
+      out.hp = { max: Math.round(bmax * factor), current: Math.round(bcur * factor) };
+    }
+    if (out.ac != null) out.ac = (out.ac | 0) + ((level - 1) >> 1);
+    const diceMult = Math.max(1, Math.round(level / 2));
+    for (const act of out.actions || []) for (const r of act.rolls || []) {
+      if (r.type === 'attack') r.modifier = (r.modifier | 0) + ((level - 1) >> 1);
+      else if (r.type === 'damage') {
+        const m = String(r.notation || '').match(/^(\d+)d(\d+)/i);
+        if (m) r.notation = `${(+m[1]) * diceMult}d${m[2]}`;
+        r.modifier = (r.modifier | 0) + (level - 1);
+      }
+    }
+    return out;
+  }
+
+  // полный разбор бросков по действиям (sheetHtml показывает только primary roll —
+  // здесь видно и урон, чтобы превью масштабирования отражало рост урона).
+  function actionsRollsHtml(sb) {
+    const acts = sb.actions || [];
+    if (!acts.length) return '';
+    return acts.map(act => {
+      const parts = (act.rolls || []).map(r =>
+        `${esc(r.label || r.type || '')} ${r.notation || ''}${r.modifier ? sign(r.modifier) : ''}`.trim());
+      return `<div class="sheet-row"><b>${esc(act.nameLocal || act.name || 'Действие')}:</b> ${parts.join(' · ')}</div>`;
+    }).join('');
+  }
+
+  // детальный вид существа: портрет + описание + слайдер уровня (1..20) с превью
+  // пересчёта + статблок (sheetHtml) + «Разместить». Слайдер стабилен (не
+  // пересобираем при вводе) — обновляем только превью, чтобы не рвать drag.
+  let creatureLevel = 1;
   function openCreatureDetail(c) {
+    creatureLevel = 1;
     const body = document.getElementById('creatureBody');
-    const title = document.getElementById('creatureWinTitle');
-    if (title) title.textContent = `${DISP_EMOJI[c.disposition] || '👹'} ${c.name || 'Существо'}`;
     const portrait = c.image ? `<img src="${c.image}" alt="">` : (DISP_EMOJI[c.disposition] || '👹');
     body.innerHTML =
       `<div class="creature-hero">` +
@@ -1867,9 +1914,26 @@
           (c.description ? `<div class="sheet-row">${esc(c.description)}</div>` : '') +
         `</div>` +
       `</div>` +
-      sheetHtml(Object.assign({ npc: true }, c)) +
-      `<button class="creature-place-btn" id="creaturePlaceBtn">Разместить на сцене</button>`;
-    body.querySelector('#creaturePlaceBtn').onclick = () => placeCreature(c, 1);
+      `<div class="level-ctl">` +
+        `<label>Уровень <b id="creatureLevelVal">1</b></label>` +
+        `<input type="range" id="creatureLevelSlider" min="1" max="20" value="1">` +
+        `<div class="level-hint">Превью пересчёта — на сцену кладёт сервер</div>` +
+      `</div>` +
+      `<div id="creaturePreview"></div>` +
+      `<button class="creature-place-btn" id="creaturePlaceBtn">Разместить</button>`;
+    const slider = body.querySelector('#creatureLevelSlider');
+    const refresh = () => {
+      creatureLevel = parseInt(slider.value, 10) || 1;
+      body.querySelector('#creatureLevelVal').textContent = creatureLevel;
+      document.getElementById('creatureWinTitle').textContent =
+        `${DISP_EMOJI[c.disposition] || '👹'} ${c.name || 'Существо'}${creatureLevel > 1 ? ' · ур. ' + creatureLevel : ''}`;
+      const scaled = previewScale(c, creatureLevel);
+      body.querySelector('#creaturePreview').innerHTML = sheetHtml(Object.assign({ npc: true }, scaled)) + actionsRollsHtml(scaled);
+      body.querySelector('#creaturePlaceBtn').textContent = 'Разместить' + (creatureLevel > 1 ? ` (ур. ${creatureLevel})` : '');
+    };
+    slider.oninput = refresh;
+    body.querySelector('#creaturePlaceBtn').onclick = () => placeCreature(c, creatureLevel);
+    refresh();
     document.getElementById('creatureWin').classList.add('show');
   }
 
