@@ -647,6 +647,22 @@
     <div class="win-body sheet" id="npcBody"></div>
   </div>
 </div>
+<!-- бестиарий: выбор существа/персонажа для постановки на сцену (gm) -->
+<div class="win-back" id="bestiaryWin">
+  <div class="win">
+    <div class="win-head">
+      <h3>👹 Бестиарий</h3>
+      <input class="win-search" id="bestiarySearch" type="text" placeholder="Поиск…" autocomplete="off">
+      <button class="win-x" id="bestiaryX">✕</button>
+    </div>
+    <div class="codex-tabs" style="padding:10px 16px 0">
+      <div class="codex-tab" data-best-tab="neutral">Нейтралы</div>
+      <div class="codex-tab active" data-best-tab="monster">Монстры</div>
+      <div class="codex-tab" data-best-tab="characters">Персонажи</div>
+    </div>
+    <div class="win-body" id="bestiaryList"></div>
+  </div>
+</div>
 <!-- сцены песочницы: список/переключение/создание/фон -->
 <div class="win-back" id="sceneWin">
   <div class="win">
@@ -700,7 +716,7 @@
   const store = {
     members: {},
     log: [],
-    catalog: { spells: [], items: [] },
+    catalog: { spells: [], items: [], creatures: [] },
     character: null,              // мой персонаж (собранный сервером)
     seats: [],                    // состав мест (для подписей видеокарточек)
     roster: {},                   // charId -> { name, ... } для имён в партии
@@ -784,7 +800,7 @@
     },
     // весь каталог контента (заклинания/предметы) от сервера
     'catalog.snapshot': (msg) => {
-      store.catalog = { spells: msg.spells || [], items: msg.items || [] };
+      store.catalog = { spells: msg.spells || [], items: msg.items || [], creatures: msg.creatures || [] };
       renderCodex();
     },
     // мой персонаж (собран сервером: rolls с modifier) — личное сообщение
@@ -1169,6 +1185,14 @@
   // окно параметров сцены закрывается кликом по фону (своя кнопка Отмена внутри)
   { const back = document.getElementById('sceneParamsWin'); back.onclick = (e) => { if (e.target === back) back.classList.remove('show'); }; }
   document.getElementById('spellsSearch').oninput = () => fillSpells();
+
+  // бестиарий: вкладки / поиск / закрытие
+  { const back = document.getElementById('bestiaryWin');
+    document.getElementById('bestiaryX').onclick = () => closeBestiary();
+    back.onclick = (e) => { if (e.target === back) closeBestiary(); };
+    document.getElementById('bestiarySearch').oninput = () => renderBestiary();
+    document.querySelectorAll('#bestiaryWin .codex-tab').forEach(t =>
+      t.onclick = () => { bestiaryTab = t.dataset.bestTab; renderBestiary(); }); }
 
   // Книга способностей: полный список действий (строки) с поиском; клик = бросок.
   function fillSpells() {
@@ -1699,7 +1723,7 @@
     b.onclick = () => dmAction(b.dataset.dm);
   });
   function dmAction(kind) {
-    if (kind === 'npc') return dmCreateNpc();
+    if (kind === 'npc') return openBestiary();
     if (kind === 'combat') return dmToggleCombat();
     console.log('[dm-console] TODO:', kind);   // check / scene — следующие этапы
   }
@@ -1711,17 +1735,63 @@
     if (!participants.length) return;
     net.send({ type: 'combat.start', participants });
   }
-  // минимальная форма NPC: имя/HP/AC/копии через prompt() — путь end-to-end
-  function dmCreateNpc() {
-    const name = prompt('NPC: имя', 'Гоблин');
-    if (name === null) return;
-    const hp = parseInt(prompt('Хиты (max)', '7'), 10) || 1;
-    const ac = parseInt(prompt('КД (AC)', '13'), 10) || 10;
-    const count = Math.max(1, parseInt(prompt('Сколько копий', '3'), 10) || 1);
-    net.send({
-      type: 'npc.create', x: 8, y: 8, count,
-      statblock: { name, ac, hp: { current: hp, max: hp }, abilities: {}, actions: [] },
-    });
+
+  // ===================================================================
+  // Бестиарий: выбор существа/персонажа и постановка на сцену через уже
+  // работающий npc.create. Вкладка/поиск — чисто UI (НЕ store, как codex);
+  // токен появится через token.added (handler уже есть). store не мутируем.
+  // ===================================================================
+  let bestiaryTab = 'monster';
+  function openBestiary() { renderBestiary(); document.getElementById('bestiaryWin').classList.add('show'); }
+  function closeBestiary() { document.getElementById('bestiaryWin').classList.remove('show'); }
+
+  function statblockFromCreature(c) {
+    return { name: c.name, npc: true, type: c.type || '', ac: c.ac,
+             hp: c.hp ? { current: c.hp.current ?? c.hp.max, max: c.hp.max } : { current: 1, max: 1 },
+             abilities: c.abilities || {}, actions: c.actions || [] };
+  }
+  function placeCreature(c) {
+    net.send({ type: 'npc.create', x: 8, y: 8, count: 1, statblock: statblockFromCreature(c) });
+    closeBestiary();
+  }
+  async function placeCharacter(charId) {
+    try {
+      const ch = await (await fetch(`/api/games/${encodeURIComponent(net.room)}/characters/${charId}`)).json();
+      const d = ch.derived || {};
+      const sb = { name: ch.name, npc: true, type: (ch.meta && ch.meta.class) || '',
+                   ac: d.ac, hp: d.hp ? { current: d.hp.current ?? d.hp.max, max: d.hp.max } : { current: 1, max: 1 },
+                   abilities: ch.abilities || {}, actions: ch.actions || [] };
+      net.send({ type: 'npc.create', x: 8, y: 8, count: 1, statblock: sb });
+    } catch (e) { /* тихо: персонаж недоступен */ }
+    closeBestiary();
+  }
+
+  function renderBestiary() {
+    const list = document.getElementById('bestiaryList');
+    if (!list) return;
+    document.querySelectorAll('#bestiaryWin .codex-tab').forEach(t => t.classList.toggle('active', t.dataset.bestTab === bestiaryTab));
+    const q = (document.getElementById('bestiarySearch').value || '').trim().toLowerCase();
+    list.innerHTML = '';
+    if (bestiaryTab === 'characters') {
+      const chars = Object.values(store.roster || {}).filter(c => !q || (c.name || '').toLowerCase().includes(q));
+      if (!chars.length) { list.innerHTML = '<div class="codex-empty">Нет персонажей</div>'; return; }
+      for (const c of chars) {
+        const row = document.createElement('div'); row.className = 'spell-row';
+        row.innerHTML = `<div class="spell-main"><div class="spell-name">${esc(c.name)}</div><div class="spell-sub">${esc(c.class || '')}${c.level ? ' ' + c.level + ' ур.' : ''}</div></div>`;
+        row.onclick = () => placeCharacter(c.charId);
+        list.appendChild(row);
+      }
+      return;
+    }
+    const creatures = (store.catalog.creatures || []).filter(c => c.disposition === bestiaryTab && (!q || (c.name || '').toLowerCase().includes(q)));
+    if (!creatures.length) { list.innerHTML = '<div class="codex-empty">Пусто</div>'; return; }
+    for (const c of creatures) {
+      const row = document.createElement('div'); row.className = 'spell-row';
+      const hp = c.hp ? c.hp.max : '—';
+      row.innerHTML = `<div class="spell-main"><div class="spell-name">${esc(c.name)}</div><div class="spell-sub">HP ${hp}, AC ${c.ac ?? '—'}${c.type ? ' · ' + esc(c.type) : ''}</div></div>`;
+      row.onclick = () => placeCreature(c);
+      list.appendChild(row);
+    }
   }
 
   // индикатор режима сцены (слева) — оживает от сервера (mode.set / combat)
