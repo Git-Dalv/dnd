@@ -107,8 +107,13 @@
   .token { position: absolute; width: var(--grid); height: var(--grid); border-radius: 50%;
     border: 2px solid var(--gold); background: radial-gradient(circle at 35% 30%, #4a6b8a, #20323f);
     display: flex; align-items: center; justify-content: center; font-size: 9px; text-align: center;
-    font-weight: 600; color: var(--ink); box-shadow: 0 3px 8px rgba(0,0,0,.6), 0 0 0 3px rgba(0,0,0,.3); cursor: grab; }
+    font-weight: 600; color: var(--ink); box-shadow: 0 3px 8px rgba(0,0,0,.6), 0 0 0 3px rgba(0,0,0,.3); cursor: default; }
   .token.enemy { border-color: var(--blood); background: radial-gradient(circle at 35% 30%, #7a3a2e, #3a1810); }
+  /* права движения видны по виду: 'мой' токен — тащибельный, с золотой подсветкой */
+  .token.movable { cursor: grab; }
+  .token.movable:hover { box-shadow: 0 3px 8px rgba(0,0,0,.6), 0 0 0 3px rgba(201,162,83,.5); }
+  .token.grabbing { cursor: grabbing; z-index: 30;
+    box-shadow: 0 6px 16px rgba(0,0,0,.7), 0 0 0 3px rgba(201,162,83,.8); }
 
   /* alt panels in center (Карточка/Дневник) — поверх карты и плавающего хотбара */
   .sheet, .journal {
@@ -582,6 +587,7 @@
     seats: [],                    // состав мест (для подписей видеокарточек)
     roster: {},                   // charId -> { name, ... } для имён в партии
     me: null,                     // { role, member, char } — кто я (роль ветвит вид)
+    tokens: [],                   // токены сцены от сервера {id,name,x,y,enemy,controlledBy}
   };
 
   // ===================================================================
@@ -663,6 +669,16 @@
     'seat.updated': (msg) => {
       store.seats = msg.seats || [];
       renderParty();
+    },
+    // полная раскладка токенов сцены при подключении
+    'tokens.snapshot': (msg) => {
+      store.tokens = msg.tokens || [];
+      renderTokens();
+    },
+    // подтверждённое сервером перемещение (источник истины) — применяем ТУТ
+    'token.moved': (msg) => {
+      const t = (store.tokens || []).find(x => x.id === msg.tokenId);
+      if (t) { t.x = msg.to.x; t.y = msg.to.y; renderTokens(); }
     },
   };
 
@@ -1385,27 +1401,28 @@
   // пиксель считает клиент). GRID — единый источник истины: та же
   // переменная --grid, что рисует фоновую сетку, поэтому токен и линии
   // совпадают при любом зуме.
-  // ВАЖНО: пока это ЛОКАЛЬНЫЙ макет карты, НЕ серверное состояние —
-  // держим в обычной переменной mapTokens, НЕ в store (как пан/зум и
-  // вкладки). Синхронизация token.move/token.moved — отдельным шагом.
+  // Токены — СЕРВЕРНОЕ состояние (store.tokens). Клиент шлёт намерение
+  // token.move и рисует подтверждённый сервером token.moved — НЕ двигает
+  // «на веру». Право двигать определяет controlledBy (см. canMove).
   // ===================================================================
   const GRID = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--grid')) || 48;
-  const mapTokens = [
-    { id: 'tok_liandra', name: 'Лиэндра', x: 3,  y: 6, enemy: false },
-    { id: 'tok_torin',   name: 'Торин',   x: 5,  y: 4, enemy: false },
-    { id: 'tok_goblin1', name: 'Гоблин',  x: 8,  y: 3, enemy: true  },
-    { id: 'tok_goblin2', name: 'Гоблин',  x: 10, y: 5, enemy: true  },
-  ];
 
-  // Пересобирает токены из mapTokens (клетка -> пиксель). Читает ТОЛЬКО
-  // mapTokens, без аргументов — по духу renderLog().
+  // вправе ли ЭТОТ клиент двигать токен t — логика совпадает с серверной:
+  // GM двигает любой; игрок — только свой (controlledBy == его member).
+  function canMove(t) {
+    if (!store.me) return false;
+    return store.me.role === 'gm' || t.controlledBy === store.me.member;
+  }
+
+  // Пересобирает токены из store.tokens (клетка -> пиксель). Читает ТОЛЬКО
+  // store, без аргументов — по духу renderLog().
   function renderTokens() {
     const world = document.getElementById('mapWorld');
     if (!world) return;
     world.querySelectorAll('.token').forEach(el => el.remove());
-    for (const t of mapTokens) {
+    for (const t of (store.tokens || [])) {
       const el = document.createElement('div');
-      el.className = 'token' + (t.enemy ? ' enemy' : '');
+      el.className = 'token' + (t.enemy ? ' enemy' : '') + (canMove(t) ? ' movable' : '');
       el.dataset.id = t.id;
       el.dataset.x = t.x;      // клетка — источник истины
       el.dataset.y = t.y;
@@ -1475,6 +1492,38 @@
       apply();
     });
     window.addEventListener('mouseup', () => { drag = null; vp.classList.remove('dragging'); });
+
+    // --- перетаскивание ТОКЕНА (отдельно от пана) ---
+    // Тащить можно только свои токены (.movable). Drag — это лишь НАМЕРЕНИЕ:
+    // источник истины по позиции — ответ сервера token.moved.
+    let tokDrag = null;
+    vp.addEventListener('mousedown', (e) => {
+      const el = e.target.closest('.token.movable');
+      if (!el) return;
+      e.stopPropagation();                 // не стартуем пан карты
+      tokDrag = {
+        el, id: el.dataset.id, sx: e.clientX, sy: e.clientY,
+        startLeft: parseFloat(el.style.left) || 0,
+        startTop: parseFloat(el.style.top) || 0,
+      };
+      el.classList.add('grabbing');
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!tokDrag) return;
+      // экранный сдвиг → координаты мира делим на zoom (предпросмотр, store не трогаем)
+      tokDrag.el.style.left = (tokDrag.startLeft + (e.clientX - tokDrag.sx) / view.zoom) + 'px';
+      tokDrag.el.style.top  = (tokDrag.startTop  + (e.clientY - tokDrag.sy) / view.zoom) + 'px';
+    });
+    window.addEventListener('mouseup', () => {
+      if (!tokDrag) return;
+      const cx = Math.round((parseFloat(tokDrag.el.style.left) || 0) / GRID);
+      const cy = Math.round((parseFloat(tokDrag.el.style.top) || 0) / GRID);
+      const id = tokDrag.id;
+      tokDrag.el.classList.remove('grabbing');
+      tokDrag = null;
+      net.send({ type: 'token.move', tokenId: id, to: { x: cx, y: cy } });
+      renderTokens();   // вернуть превью к store-значению; новая клетка — по token.moved
+    });
 
     // кнопки +/− зумят к центру viewport
     document.getElementById('zoomIn').onclick = () => {

@@ -17,10 +17,10 @@
       "grid": { "size": 70, "type": "square", "offsetX": 0, "offsetY": 0 },
       "tokens": [
         { "id": "tok_dana", "charId": "char_a1b2", "name": "Лиэндра", "img": "assets/tokens/leandra.png",
-          "x": 5, "y": 8, "size": 1, "ownerId": "player_dana",
+          "x": 5, "y": 8, "size": 1, "controlledBy": "player_dana",
           "hpBar": { "current": 22, "max": 27 }, "conditions": ["concentration"] },
         { "id": "tok_goblin1", "name": "Goblin", "img": "assets/tokens/goblin.png",
-          "x": 9, "y": 6, "size": 1, "ownerId": "player_vlad", "hidden": true }
+          "x": 9, "y": 6, "size": 1, "controlledBy": "gm", "hidden": true }
       ],
       "fog": { "enabled": true, "revealed": [[4,7],[5,7],[5,8]] }
     }
