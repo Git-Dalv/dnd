@@ -9,6 +9,8 @@ VTT backend — минимальный каркас.
 import json
 import random
 import re
+import secrets
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -16,7 +18,20 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-app = FastAPI()
+try:
+    from . import db                 # запуск как пакет (uvicorn backend.main:app)
+except ImportError:                  # noqa: запуск из каталога backend/ (uvicorn main:app)
+    import db
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # БД поднимаем при старте — это «полка», с которой комнаты встают после рестарта.
+    db.init_db()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 # Прототип фронта лежит в docs/. Отдаём его как статику.
 DOCS_DIR = Path(__file__).resolve().parent.parent / "docs"
@@ -47,6 +62,8 @@ class Member:
 @dataclass
 class Room:
     room_id: str
+    name: str = ""
+    gm_id: str | None = None
     members: dict[str, Member] = field(default_factory=dict)
     log: list = field(default_factory=list)
 
@@ -76,7 +93,17 @@ rooms: dict[str, Room] = {}
 
 
 def get_room(room_id: str) -> Room:
-    return rooms.setdefault(room_id, Room(room_id=room_id))
+    room = rooms.get(room_id)
+    if room is None:
+        room = Room(room_id=room_id)
+        # если игра уже есть в БД — поднимаем её метаданные (места берём из БД по запросу)
+        for g in db.list_games():
+            if g["roomId"] == room_id:
+                room.name = g["name"]
+                room.gm_id = g["gmId"]
+                break
+        rooms[room_id] = room
+    return room
 
 
 @app.websocket("/ws/{room_id}/{member_id}")
@@ -90,6 +117,8 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     await room.broadcast({"type": "member.connection", "memberId": member_id, "connected": True})
     # новому участнику — хвост журнала, чтобы догнал состояние
     await ws.send_text(json.dumps({"type": "log.snapshot", "log": room.log[-50:]}, ensure_ascii=False))
+    # и текущий состав мест из БД (если игра существует)
+    await ws.send_text(json.dumps({"type": "seat.updated", "seats": db.list_seats(room_id)}, ensure_ascii=False))
 
     try:
         while True:
@@ -98,7 +127,9 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
             await handle(room, member_id, role, msg)
     except WebSocketDisconnect:
         room.members.pop(member_id, None)
+        db.free_seat(room_id, member_id)   # освобождаем место (событие уровня сессии)
         await room.broadcast({"type": "member.connection", "memberId": member_id, "connected": False})
+        await room.broadcast({"type": "seat.updated", "seats": db.list_seats(room_id)})
 
 
 async def handle(room: Room, member_id: str, role: str, msg: dict):
@@ -146,6 +177,30 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
         })
         return
 
+    # --- занять место: источник истины — БД (лимит 4+1, гонку решает атомарный UPDATE) ---
+    if mtype == "seat.take":
+        seat_no = msg.get("seatNo")
+        char_id = msg.get("charId")
+        if not isinstance(seat_no, int):
+            await room.send_to([member_id], {"type": "seat.denied", "reason": "bad_seat"})
+            return
+        # роль и номер места должны соответствовать (проверка на сервере):
+        # gm — только seat 0; player — только 1..MAX_PLAYER_SEATS
+        if role == "gm" and seat_no != 0:
+            await room.send_to([member_id], {"type": "seat.denied", "reason": "gm_seat_only"})
+            return
+        if role != "gm" and seat_no == 0:
+            await room.send_to([member_id], {"type": "seat.denied", "reason": "gm_only"})
+            return
+        if role != "gm" and not (1 <= seat_no <= db.MAX_PLAYER_SEATS):
+            await room.send_to([member_id], {"type": "seat.denied", "reason": "bad_seat"})
+            return
+        if db.take_seat(room.room_id, seat_no, member_id, char_id):
+            await room.broadcast({"type": "seat.updated", "seats": db.list_seats(room.room_id)})
+        else:
+            await room.send_to([member_id], {"type": "seat.denied", "reason": "taken"})
+        return
+
     # TODO: token.move (проверять ownerId), scene.switch (gm only),
     #       combat.start/next (gm only), audio.play (gm only), fog.reveal (gm only)
 
@@ -153,6 +208,42 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
 @app.get("/health")
 def health():
     return {"ok": True, "rooms": len(rooms)}
+
+
+# ---- Лобби (HTTP) — экраны ДО входа в WS-комнату, удобнее обычным fetch ----
+
+@app.get("/api/games")
+def api_list_games():
+    return db.list_games()
+
+
+@app.post("/api/games")
+def api_create_game(payload: dict):
+    name = payload.get("name") or "Новая игра"
+    gm_id = payload.get("gmId")
+    room_id = "room_" + secrets.token_hex(4)   # код комнаты = код входа по ссылке
+    return db.create_game(room_id, name, gm_id)
+
+
+@app.get("/api/games/{room_id}/characters")
+def api_list_characters(room_id: str):
+    return db.list_characters(room_id)
+
+
+@app.post("/api/games/{room_id}/characters")
+def api_create_character(room_id: str, payload: dict):
+    # data — объект по character-schema.json; и форма, и импорт JSON дают один и тот же data
+    data = payload.get("data") or {}
+    owner_id = payload.get("ownerId")
+    char_id = "char_" + secrets.token_hex(4)
+    data.setdefault("id", char_id)
+    db.create_character(char_id, room_id, data, owner_id)
+    return {"charId": char_id, "character": data}
+
+
+@app.get("/api/games/{room_id}/seats")
+def api_list_seats(room_id: str):
+    return db.list_seats(room_id)
 
 
 # Корень отдаёт прототип. Регистрируем ПОСЛЕ /ws и /health, чтобы их не перехватить.
