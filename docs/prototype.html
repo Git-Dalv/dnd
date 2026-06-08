@@ -92,6 +92,9 @@
   .map-viewport.dragging { cursor: grabbing; }
   /* world — только носитель токенов; токены позиционируются от его origin (0,0) */
   .map-world { position: absolute; top: 0; left: 0; width: 0; height: 0; transform-origin: 0 0; }
+  /* фон активной сцены (картинка из библиотеки) — под сеткой/туманом/токенами */
+  .map-bg { position: absolute; top: 0; left: 0; width: 3000px; height: 2000px; pointer-events: none;
+    background-repeat: no-repeat; background-size: contain; background-position: top left; }
   /* туман войны: слой под токенами; скрытые клетки — тёмные квадраты */
   .fog-layer { position: absolute; top: 0; left: 0; pointer-events: none; }
   .fog-cell { position: absolute; width: var(--grid); height: var(--grid); background: rgba(8,6,4,.94); }
@@ -463,7 +466,7 @@
       <!-- viewport обрезает, world таскается/масштабируется внутри -->
       <div class="map-viewport" id="mapViewport">
         <!-- токены создаёт renderTokens() из mapTokens (клетки -> пиксели) -->
-        <div class="map-world" id="mapWorld"><div class="fog-layer" id="fogLayer"></div></div>
+        <div class="map-world" id="mapWorld"><div class="map-bg" id="mapBg"></div><div class="fog-layer" id="fogLayer"></div></div>
       </div>
       <div class="zoom-ctl">
         <button id="zoomIn" title="Приблизить">+</button>
@@ -627,6 +630,16 @@
     <div class="win-body sheet" id="npcBody"></div>
   </div>
 </div>
+<!-- сцены песочницы: список/переключение/создание/фон -->
+<div class="win-back" id="sceneWin">
+  <div class="win">
+    <div class="win-head">
+      <h3>🗺 Сцены</h3>
+      <button class="win-x" id="sceneX">✕</button>
+    </div>
+    <div class="win-body" id="sceneBody"></div>
+  </div>
+</div>
 
 <script>
   // ===================================================================
@@ -662,6 +675,9 @@
     combat: { active: false, round: 0, turnIndex: 0, order: [] },  // трекер боя (сервер)
     mode: 'explore',              // 'explore' | 'combat' — режим сцены
     fog: [],                      // открытые клетки тумана [[x,y],...] (сервер)
+    scenes: [],                   // список сцен [{id,name}] (сервер)
+    activeSceneId: null,          // id активной сцены
+    scene: { map: null, grid: { size: 48, offsetX: 0, offsetY: 0 } },  // активная сцена (фон/сетка)
   };
 
   // ===================================================================
@@ -789,6 +805,25 @@
     'fog.updated': (msg) => {
       store.fog = msg.revealed || [];
       renderFog();
+    },
+    // список сцен (+ активная) — для инструмента «Сцены»
+    'scene.list': (msg) => {
+      store.scenes = msg.scenes || [];
+      store.activeSceneId = msg.activeSceneId || store.activeSceneId;
+      renderScenesTool();
+    },
+    // переключение/полное состояние сцены: фон+сетка+токены+туман
+    'scene.switched': (msg) => {
+      store.activeSceneId = msg.sceneId;
+      applyScene(msg.state || {});
+    },
+    // изменены фон/сетка активной сцены
+    'scene.updated': (msg) => {
+      if (msg.sceneId !== store.activeSceneId) return;
+      if ('map' in msg) store.scene.map = msg.map;
+      if (msg.grid) store.scene.grid = msg.grid;
+      renderMapBg();
+      applyGrid(store.scene.grid);
     },
   };
 
@@ -1077,7 +1112,7 @@
   document.getElementById('tabSpells').onclick = () => openWin('spellsWin', fillSpells);
   document.getElementById('tabInv').onclick = () => openWin('invWin', fillInv);
   document.getElementById('tabChar').onclick = () => openWin('charWin', fillChar);
-  for (const k of ['spells', 'inv', 'char', 'npc']) {
+  for (const k of ['spells', 'inv', 'char', 'npc', 'scene']) {
     const back = document.getElementById(k + 'Win');
     document.getElementById(k + 'X').onclick = () => closeWin(k + 'Win');
     back.onclick = (e) => { if (e.target === back) closeWin(k + 'Win'); };   // клик по фону закрывает
@@ -1557,9 +1592,6 @@
       };
     });
   }
-  // заглушки до S5 (инструменты «Сетка»/«Сцены» получат логику там)
-  function openGridTool() { console.log('[sandbox] grid tool (S5)'); }
-  function openScenesTool() { console.log('[sandbox] scenes tool (S5)'); }
   // постановка NPC из шаблона — реализуется в S6; пока минимально через npc.create
   function placeNpcAt(cx, cy) {
     net.send({ type: 'npc.create', x: cx, y: cy, count: 1,
@@ -1662,7 +1694,10 @@
   // token.move и рисует подтверждённый сервером token.moved — НЕ двигает
   // «на веру». Право двигать определяет controlledBy (см. canMove).
   // ===================================================================
-  const GRID = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--grid')) || 48;
+  // GRID/смещение — динамические (меняются со сценой, см. applyGrid в S5)
+  let GRID = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--grid')) || 48;
+  let GRID_OFFSET = { x: 0, y: 0 };
+  let applyMapView = null;        // ссылка на apply() из IIFE карты (для applyGrid)
 
   // Туман: тёмные квадраты на СКРЫТЫХ клетках в пределах мира. revealed —
   // открытые клетки (из store.fog). В dev DM видит под туманом приглушённо.
@@ -1678,8 +1713,8 @@
         if (revealed.has(x + ',' + y)) continue;   // открытая клетка — без тумана
         const cell = document.createElement('div');
         cell.className = 'fog-cell';
-        cell.style.left = (x * GRID) + 'px';
-        cell.style.top = (y * GRID) + 'px';
+        cell.style.left = (x * GRID + GRID_OFFSET.x) + 'px';
+        cell.style.top = (y * GRID + GRID_OFFSET.y) + 'px';
         frag.appendChild(cell);
       }
     }
@@ -1713,8 +1748,8 @@
       el.dataset.id = t.id;
       el.dataset.x = t.x;      // клетка — источник истины
       el.dataset.y = t.y;
-      el.style.left = (t.x * GRID) + 'px';   // пиксель считает клиент из GRID
-      el.style.top  = (t.y * GRID) + 'px';
+      el.style.left = (t.x * GRID + GRID_OFFSET.x) + 'px';   // пиксель из GRID + смещение сцены
+      el.style.top  = (t.y * GRID + GRID_OFFSET.y) + 'px';
       // имя + HP-бар + состояния + маркер выбывания
       const nm = document.createElement('span'); nm.className = 'tok-name'; nm.textContent = t.name;
       el.appendChild(nm);
@@ -1741,6 +1776,46 @@
   renderTokens();
   renderFog();   // первичная отрисовка тумана (GRID уже объявлен выше)
 
+  // ---- сцены (S5): фон-карта, сетка, переключение ----
+  function renderMapBg() {
+    const bg = document.getElementById('mapBg');
+    if (bg) bg.style.backgroundImage = store.scene.map ? `url(${store.scene.map})` : 'none';
+  }
+  function applyGrid(grid) {
+    GRID = (grid && grid.size) || 48;
+    GRID_OFFSET = { x: (grid && grid.offsetX) || 0, y: (grid && grid.offsetY) || 0 };
+    document.documentElement.style.setProperty('--grid', GRID + 'px');  // токены/фог-клетки тоже из --grid
+    if (applyMapView) applyMapView();   // фон-сетка viewport
+    renderTokens();
+    renderFog();
+  }
+  function applyScene(state) {
+    store.tokens = state.tokens || [];
+    store.fog = state.fog || [];
+    store.scene = { map: state.map || null, grid: state.grid || { size: 48, offsetX: 0, offsetY: 0 } };
+    renderMapBg();
+    applyGrid(store.scene.grid);        // пересобирает токены/фог под новую сетку
+  }
+  function renderScenesTool() {
+    const body = document.getElementById('sceneBody');
+    if (!body) return;
+    body.innerHTML = (store.scenes || []).map(s =>
+      `<div class="spell-row" data-sid="${s.id}"><div class="spell-main"><div class="spell-name">${esc(s.name)}${s.id === store.activeSceneId ? ' ✦' : ''}</div></div></div>`).join('')
+      + '<div class="tok-controls"><button class="tok-cond-btn" id="sceneNew">＋ Новая сцена</button><button class="tok-cond-btn" id="sceneMap">Задать фон</button></div>';
+    body.querySelectorAll('[data-sid]').forEach(r => r.onclick = () => net.send({ type: 'scene.switch', sceneId: r.dataset.sid }));
+    document.getElementById('sceneNew').onclick = () => { const n = prompt('Имя сцены', 'Подземелье'); if (n) net.send({ type: 'scene.create', name: n }); };
+    document.getElementById('sceneMap').onclick = () => { const m = prompt('Путь к фону (из библиотеки)', store.scene.map || 'assets/maps/'); if (m !== null) net.send({ type: 'scene.config', sceneId: store.activeSceneId, map: m }); };
+  }
+  function openScenesTool() { renderScenesTool(); document.getElementById('sceneWin').classList.add('show'); }
+  function openGridTool() {
+    const g = store.scene.grid || { size: 48, offsetX: 0, offsetY: 0 };
+    const size = parseInt(prompt('Размер клетки (px)', g.size), 10);
+    if (!size) return;
+    const ox = parseInt(prompt('Смещение сетки X (px)', g.offsetX || 0), 10) || 0;
+    const oy = parseInt(prompt('Смещение сетки Y (px)', g.offsetY || 0), 10) || 0;
+    net.send({ type: 'scene.config', sceneId: store.activeSceneId, grid: { size, offsetX: ox, offsetY: oy } });
+  }
+
   // ===================================================================
   // Карта — ЛОКАЛЬНЫЙ пан/зум вида клиента. Состояние в переменной view,
   // НЕ в store и НЕ на сервер: каждый смотрит на стол под своим углом.
@@ -1756,13 +1831,14 @@
 
     function apply() {
       world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`;
-      // неподвижная сетка vp: шаг привязан к зуму, сдвиг — к пану,
-      // тот же GRID и view, что у токенов → сетка и токены совпадают
+      // неподвижная сетка vp: шаг привязан к зуму, сдвиг — к пану + смещению сцены,
+      // тот же GRID/offset, что у токенов → сетка и токены совпадают
       const g = GRID * view.zoom;
       vp.style.backgroundSize = `${g}px ${g}px`;
-      vp.style.backgroundPosition = `${view.x}px ${view.y}px`;
+      vp.style.backgroundPosition = `${view.x + GRID_OFFSET.x * view.zoom}px ${view.y + GRID_OFFSET.y * view.zoom}px`;
       if (zlvl) zlvl.textContent = Math.round(view.zoom * 100) + '%';
     }
+    applyMapView = apply;   // даём applyGrid (S5) перерисовывать вид при смене сетки
     apply();
 
     const clampZoom = (z) => Math.min(MAX, Math.max(MIN, z));
@@ -1790,7 +1866,7 @@
       const rect = vp.getBoundingClientRect();
       const wx = (clientX - rect.left - view.x) / view.zoom;
       const wy = (clientY - rect.top - view.y) / view.zoom;
-      return [Math.floor(wx / GRID), Math.floor(wy / GRID)];
+      return [Math.floor((wx - GRID_OFFSET.x) / GRID), Math.floor((wy - GRID_OFFSET.y) / GRID)];
     }
     // dispatcher инструментов палитры на чистый клик по карте (S3/S4/S6)
     function mapToolClick(clientX, clientY) {
