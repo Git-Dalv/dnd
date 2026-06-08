@@ -67,22 +67,27 @@ class Catalog:
         self.data_dir = Path(data_dir)
         self.spells: dict[str, dict] = {}
         self.items: dict[str, dict] = {}
+        # каталоги создания персонажа (CC1): классы / расы / предыстории
+        self.classes: dict[str, dict] = {}
+        self.races: dict[str, dict] = {}
+        self.backgrounds: dict[str, dict] = {}
 
     def load(self) -> "Catalog":
         """Грузит srd → затем homebrew ПОВЕРХ (homebrew может переопределить
         запись по id). Битые/отсутствующие файлы пропускаются."""
-        self.spells.clear()
-        self.items.clear()
+        for d in (self.spells, self.items, self.classes, self.races, self.backgrounds):
+            d.clear()
+        # имя файла -> в какой словарь грузить (по подстроке)
+        routes = [("spell", self.spells), ("item", self.items),
+                  ("class", self.classes), ("race", self.races),
+                  ("background", self.backgrounds)]
         # порядок важен: srd первым, homebrew последним (перекрывает)
         for section in ("srd", "homebrew"):
             section_dir = self.data_dir / section
             for path in sorted(glob.glob(str(section_dir / "*.json"))):
                 name = os.path.basename(path).lower()
-                if "spell" in name:
-                    target = self.spells
-                elif "item" in name:
-                    target = self.items
-                else:
+                target = next((d for key, d in routes if key in name), None)
+                if target is None:
                     continue
                 try:
                     with open(path, encoding="utf-8") as fh:
@@ -106,6 +111,9 @@ class Catalog:
         return {
             "spells": [_strip_comments(r) for r in self.spells.values()],
             "items": [_strip_comments(r) for r in self.items.values()],
+            "classes": [_strip_comments(r) for r in self.classes.values()],
+            "races": [_strip_comments(r) for r in self.races.values()],
+            "backgrounds": [_strip_comments(r) for r in self.backgrounds.values()],
         }
 
 

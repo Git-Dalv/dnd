@@ -271,6 +271,8 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     # и текущее состояние боя/режима сцены
     await ws.send_text(json.dumps({"type": "combat.updated", "combat": room.combat}, ensure_ascii=False))
     await ws.send_text(json.dumps({"type": "mode.set", "mode": room.mode}, ensure_ascii=False))
+    # каталог контента (заклинания/предметы/классы/расы/предыстории) — для codex/визарда
+    await ws.send_text(json.dumps({"type": "catalog.snapshot", **content_catalog.snapshot()}, ensure_ascii=False))
     # приватные заметки мастера — только мастеру (игрокам не шлём)
     if role == "gm":
         await ws.send_text(json.dumps({"type": "notes.snapshot", "notes": room.notes}, ensure_ascii=False))
@@ -663,6 +665,12 @@ def health():
 
 
 # ---- Лобби (HTTP) — экраны ДО входа в WS-комнату, удобнее обычным fetch ----
+
+@app.get("/api/catalog")
+def api_catalog():
+    # каталог для мастера создания персонажа (классы/расы/предыстории + spells/items)
+    return content_catalog.snapshot()
+
 
 @app.get("/api/games")
 def api_list_games():
