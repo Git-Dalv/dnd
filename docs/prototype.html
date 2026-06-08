@@ -216,28 +216,20 @@
   .hp-temp { position: absolute; top: -4px; right: -4px; background: #2f6a8a; color: #fff; border: 1px solid var(--gold);
     border-radius: 9px; font-family: 'Cinzel'; font-size: 10px; padding: 1px 6px; box-shadow: 0 2px 6px rgba(0,0,0,.6); }
 
-  /* центр: пагинируемая сетка действий (2 ряда фикс. высоты, колонки вправо) */
-  .hb-center { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-  .act-pager { display: flex; align-items: center; gap: 8px; }
-  .pager-btn { width: 22px; height: 64px; background: linear-gradient(180deg, var(--panel-2), var(--panel));
-    border: 1px solid var(--edge-bright); border-radius: 4px; color: var(--gold-bright); font-family: 'Cinzel';
-    font-size: 16px; cursor: pointer; flex-shrink: 0; }
-  .pager-btn:hover:not(:disabled) { border-color: var(--gold); }
-  .pager-btn:disabled { opacity: .3; cursor: default; }
-  .act-grid { display: grid; grid-template-rows: repeat(2, 40px); grid-auto-flow: column; grid-auto-columns: 40px;
-    gap: 6px; height: 86px; align-content: center; }
-  .act { position: relative; width: 40px; height: 40px; border-radius: 5px;
-    background: linear-gradient(160deg, var(--panel-2), #181309); border: 1px solid var(--edge-bright);
-    display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer;
-    transition: transform .12s, border-color .12s, box-shadow .12s; }
-  .act:hover { transform: translateY(-2px); border-color: var(--gold); box-shadow: 0 4px 12px rgba(201,162,83,.3); }
-  .act-lvl { position: absolute; bottom: -2px; right: -2px; background: #241c12; color: var(--gold-bright);
+  /* центр: НАСТРАИВАЕМАЯ сетка 16 слотов (2×8), пустых по умолчанию, фикс. размер */
+  .slot-grid { display: grid; grid-template-rows: repeat(2, 44px); grid-template-columns: repeat(8, 44px); gap: 6px; }
+  .slot { width: 44px; height: 44px; border-radius: 6px; position: relative;
+    display: flex; align-items: center; justify-content: center; font-size: 19px;
+    background: rgba(24,19,9,.6); border: 1px dashed var(--edge-bright);
+    transition: border-color .12s, background .12s, transform .12s; }
+  .slot.empty { color: transparent; }            /* пустой слот — рамка-плейсхолдер, бар не схлопывается */
+  .slot.filled { background: linear-gradient(160deg, var(--panel-2), #181309); border: 1px solid var(--edge-bright); cursor: grab; }
+  .slot.filled:hover { border-color: var(--gold); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(201,162,83,.3); }
+  .slot.drop-hover { border-color: var(--gold-bright); background: rgba(201,162,83,.15); border-style: solid; }
+  .slot .lvl { position: absolute; bottom: -2px; right: -2px; background: #241c12; color: var(--gold-bright);
     border: 1px solid var(--edge-bright); border-radius: 50%; width: 14px; height: 14px; font-size: 9px;
     font-family: 'Cinzel'; display: flex; align-items: center; justify-content: center; }
-  .act-empty { color: var(--ink-dim); font-style: italic; font-size: 12px; align-self: center; white-space: nowrap; }
-  .act-dots { display: flex; gap: 5px; height: 8px; align-items: center; }
-  .act-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--edge-bright); cursor: pointer; }
-  .act-dot.active { background: var(--gold-bright); }
+  .slot .kind { position: absolute; top: 1px; left: 2px; font-size: 8px; opacity: .65; }
 
   /* правая панель ресурсов (из store.character.resources, не хардкод) */
   .hb-res { align-self: stretch; display: flex; gap: 16px; padding-left: 14px; border-left: 1px solid var(--edge);
@@ -432,14 +424,7 @@
       <div class="hb-body">
         <!-- наполняется renderHotbar()/renderActions()/renderResources() из store.character -->
         <div class="hp-orb" id="hpOrb"><div class="hp-val">—</div><div class="hp-max"></div></div>
-        <div class="hb-center">
-          <div class="act-pager">
-            <button class="pager-btn" id="actPrev" title="Назад">‹</button>
-            <div class="act-grid" id="actGrid"></div>
-            <button class="pager-btn" id="actNext" title="Вперёд">›</button>
-          </div>
-          <div class="act-dots" id="actDots"></div>
-        </div>
+        <div class="slot-grid" id="slotGrid"></div>
         <div class="hb-res" id="hbRes"></div>
       </div>
     </div>
@@ -902,10 +887,6 @@
     location.href = 'lobby.html' + (net.room ? ('?room=' + encodeURIComponent(net.room)) : '');
   };
 
-  // пагинация сетки действий
-  document.getElementById('actPrev').onclick = () => { actPage--; renderActions(); };
-  document.getElementById('actNext').onclick = () => { actPage++; renderActions(); };
-
   // вкладки бара ОТКРЫВАЮТ ОКНА (не переключают контент)
   function openWin(id, fill) { if (fill) fill(); document.getElementById(id).classList.add('show'); }
   function closeWin(id) { document.getElementById(id).classList.remove('show'); }
@@ -931,6 +912,12 @@
     for (const act of list) {
       const roll = actionPrimaryRoll(act);
       const row = document.createElement('div'); row.className = 'spell-row';
+      // строку можно перетащить в слот бара (несёт id действия)
+      if (act.id) {
+        row.draggable = true;
+        row.ondragstart = (e) => { e.dataTransfer.setData('text/ref', act.id); hbDrag = { ref: act.id, fromSlot: null }; hbDroppedOnSlot = false; };
+        row.ondragend = () => { hbDrag = null; };
+      }
       const lvl = document.createElement('div'); lvl.className = 'spell-lvl';
       lvl.textContent = (act.kind === 'spell' && act.level != null) ? act.level : actionIcon(act);
       const main = document.createElement('div'); main.className = 'spell-main';
@@ -963,6 +950,12 @@
       const icon = (it.icon && /\p{Emoji}/u.test(it.icon)) ? it.icon : '🎒';
       slot.innerHTML = `<div class="inv-icon">${icon}</div><div class="inv-name">${esc(it.nameLocal || it.name || 'Предмет')}</div>`
         + (it.qty ? `<div class="inv-qty">×${it.qty}</div>` : '');
+      // предмет можно перетащить в слот бара (несёт id предмета)
+      if (it.id) {
+        slot.draggable = true;
+        slot.ondragstart = (e) => { e.dataTransfer.setData('text/ref', it.id); hbDrag = { ref: it.id, fromSlot: null }; hbDroppedOnSlot = false; };
+        slot.ondragend = () => { hbDrag = null; };
+      }
       grid.appendChild(slot);
     }
     body.appendChild(grid);
@@ -1083,52 +1076,114 @@
       if (hp.temp > 0) html += `<div class="hp-temp" title="Временные хиты">+${hp.temp}</div>`;
       orb.innerHTML = html;
     }
-    renderActions();
+    renderSlots();
     renderResources();
   }
 
-  // сетка действий с пагинацией. actPage — ЛОКАЛЬНЫЙ вид (не store). Бар не меняет
-  // высоту: при переполнении — листание; полный список — в окне «Книга способностей».
-  let actPage = 0;
-  const ACT_PAGE_SIZE = 12;   // 2 ряда × 6 колонок
-  function renderActions() {
-    const grid = document.getElementById('actGrid');
+  // ===================================================================
+  // Бар = НАСТРАИВАЕМАЯ панель: 16 фикс. слотов, пустых по умолчанию.
+  // renderSlots() читает store.character.hotbar (ссылки по ref на actions/
+  // инвентарь), без аргументов. drag&drop кладёт/переставляет/очищает слот;
+  // на изменение шлём hotbar.set (см. ниже) — раскладку пишет сервер в БД.
+  // ===================================================================
+  const HOTBAR_SLOTS = 16;
+
+  // приводим store.character.hotbar к форме [{slot,ref}] длины 16 (схема)
+  function ensureHotbar() {
+    const c = store.character;
+    if (!c) return [];
+    const norm = Array.from({ length: HOTBAR_SLOTS }, (_, i) => ({ slot: i, ref: null }));
+    if (Array.isArray(c.hotbar)) {
+      for (const e of c.hotbar) {
+        if (e && Number.isInteger(e.slot) && e.slot >= 0 && e.slot < HOTBAR_SLOTS) {
+          norm[e.slot] = { slot: e.slot, ref: e.ref ?? null };
+        }
+      }
+    }
+    c.hotbar = norm;
+    return norm;
+  }
+
+  // индекс id -> { obj, kind, icon } из действий + инвентаря персонажа
+  function hotbarIndex() {
+    const c = store.character || {};
+    const idx = {};
+    for (const a of (c.actions || [])) {
+      if (a.id) idx[a.id] = { obj: a, kind: (a.kind === 'item' ? 'item' : 'ability'), icon: actionIcon(a) };
+    }
+    const items = Array.isArray(c.inventory) ? c.inventory : [];
+    for (const it of items) {
+      if (it.id) idx[it.id] = { obj: it, kind: 'item', icon: (it.icon && /\p{Emoji}/u.test(it.icon)) ? it.icon : '🎒' };
+    }
+    return idx;
+  }
+
+  let hbDrag = null;           // {ref, fromSlot|null} — состояние перетаскивания (вид)
+  let hbDroppedOnSlot = false; // упал ли drag на слот (для очистки при сбросе наружу)
+
+  function renderSlots() {
+    const grid = document.getElementById('slotGrid');
     if (!grid) return;
-    const actions = (store.character && store.character.actions) || [];
-    const pages = Math.max(1, Math.ceil(actions.length / ACT_PAGE_SIZE));
-    if (actPage >= pages) actPage = pages - 1;
-    if (actPage < 0) actPage = 0;
-
+    const hb = ensureHotbar();
+    const idx = hotbarIndex();
     grid.innerHTML = '';
-    if (!actions.length) grid.innerHTML = '<div class="act-empty">Нет действий</div>';
-    for (const act of actions.slice(actPage * ACT_PAGE_SIZE, actPage * ACT_PAGE_SIZE + ACT_PAGE_SIZE)) {
-      const name = act.nameLocal || act.name || 'Действие';
-      const roll = actionPrimaryRoll(act);
-      const div = document.createElement('div');
-      div.className = 'act';
-      div.title = roll ? `${name} (${roll.notation}${roll.modifier ? sign(roll.modifier) : ''})` : name;
-      div.textContent = actionIcon(act);
-      if (act.kind === 'spell' && act.level != null) {            // цифра круга в углу
-        const b = document.createElement('span'); b.className = 'act-lvl'; b.textContent = act.level;
-        div.appendChild(b);
-      }
-      div.onclick = () => rollAction(act);
-      grid.appendChild(div);
-    }
+    for (let i = 0; i < HOTBAR_SLOTS; i++) {
+      const ref = hb[i] ? hb[i].ref : null;
+      const entry = ref ? idx[ref] : null;
+      const el = document.createElement('div');
+      el.dataset.slot = i;
 
-    const prev = document.getElementById('actPrev'), next = document.getElementById('actNext');
-    if (prev) prev.disabled = actPage <= 0;
-    if (next) next.disabled = actPage >= pages - 1;
-    const dots = document.getElementById('actDots');
-    if (dots) {
-      dots.innerHTML = '';
-      if (pages > 1) for (let i = 0; i < pages; i++) {
-        const d = document.createElement('span');
-        d.className = 'act-dot' + (i === actPage ? ' active' : '');
-        d.onclick = () => { actPage = i; renderActions(); };
-        dots.appendChild(d);
+      if (entry) {
+        const x = entry.obj;
+        el.className = 'slot filled';
+        el.draggable = true;
+        const name = x.nameLocal || x.name || '';
+        const roll = (entry.kind === 'item') ? null : actionPrimaryRoll(x);
+        el.title = roll ? `${name} (${roll.notation}${roll.modifier ? sign(roll.modifier) : ''})` : name;
+        el.textContent = entry.icon;
+        if (entry.kind !== 'item' && x.kind === 'spell' && x.level != null) {
+          const lv = document.createElement('span'); lv.className = 'lvl'; lv.textContent = x.level; el.appendChild(lv);
+        }
+        const kd = document.createElement('span'); kd.className = 'kind'; kd.textContent = entry.kind === 'item' ? '🎒' : '✦';
+        el.appendChild(kd);
+        // клик по заполненному слоту = бросок (предмет-расходник — пока TODO)
+        el.onclick = () => { if (entry.kind === 'item') return; rollAction(x); };
+        el.ondragstart = () => { hbDrag = { ref, fromSlot: i }; hbDroppedOnSlot = false; };
+        el.ondragend = () => {
+          // сброс заполненного слота НАРУЖУ (не на слот) — очистка
+          if (hbDrag && hbDrag.fromSlot != null && !hbDroppedOnSlot) { hb[hbDrag.fromSlot].ref = null; commitHotbar(); }
+          hbDrag = null;
+        };
+      } else {
+        el.className = 'slot empty';
       }
+
+      el.ondragover = (e) => { e.preventDefault(); el.classList.add('drop-hover'); };
+      el.ondragleave = () => el.classList.remove('drop-hover');
+      el.ondrop = (e) => {
+        e.preventDefault(); el.classList.remove('drop-hover');
+        const target = +el.dataset.slot;
+        hbDroppedOnSlot = true;
+        const fromWindow = e.dataTransfer.getData('text/ref');
+        if (hbDrag && hbDrag.fromSlot != null) {            // перестановка между слотами — меняем местами
+          const t = hb[target].ref; hb[target].ref = hb[hbDrag.fromSlot].ref; hb[hbDrag.fromSlot].ref = t;
+        } else {                                            // из окна книги/инвентаря
+          const ref = (hbDrag && hbDrag.ref) || fromWindow;
+          if (!ref) return;
+          hb[target].ref = ref;
+        }
+        commitHotbar();
+      };
+
+      grid.appendChild(el);
     }
+  }
+
+  // локально перерисовать + (промпт 3) сохранить раскладку на сервере
+  function commitHotbar() {
+    renderSlots();
+    const c = store.character;
+    if (c && c.id) net.send({ type: 'hotbar.set', charId: c.id, hotbar: c.hotbar });
   }
 
   // правая панель ресурсов: ячейки / вдохновение / кастомные — всё из store.character
