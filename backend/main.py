@@ -68,6 +68,20 @@ class Member:
     char_name: str | None = None   # имя персонажа для журнала (а не member_id)
 
 
+# Граница карты в клетках — для клампинга позиций токенов (защита от заброса).
+GRID_MAX = 60
+
+# Стартовая раскладка токенов сцены. controlledBy — источник прав движения:
+# 'gm' (двигает только мастер) либо memberId игрока (двигает только он). GM
+# двигает любой токен; игрок — только свой. Позиции (x,y) — в КЛЕТКАХ.
+DEFAULT_TOKENS = [
+    {"id": "tok_liandra", "name": "Лиэндра", "x": 3,  "y": 6, "enemy": False, "controlledBy": "player_dana"},
+    {"id": "tok_torin",   "name": "Торин",   "x": 5,  "y": 4, "enemy": False, "controlledBy": "player_max"},
+    {"id": "tok_goblin1", "name": "Гоблин",  "x": 8,  "y": 3, "enemy": True,  "controlledBy": "gm"},
+    {"id": "tok_goblin2", "name": "Гоблин",  "x": 10, "y": 5, "enemy": True,  "controlledBy": "gm"},
+]
+
+
 @dataclass
 class Room:
     room_id: str
@@ -75,6 +89,15 @@ class Room:
     gm_id: str | None = None
     members: dict[str, Member] = field(default_factory=dict)
     log: list = field(default_factory=list)
+    # позиции токенов — событие «тика», держим ТОЛЬКО в памяти Room, в БД на каждый
+    # ход НЕ пишем (db.py — для событий уровня сессии). id -> токен.
+    tokens: dict[str, dict] = field(default_factory=dict)
+
+    def seed_tokens_if_empty(self):
+        """Один раз кладёт стартовую раскладку, если токенов ещё нет."""
+        if not self.tokens:
+            for t in DEFAULT_TOKENS:
+                self.tokens[t["id"]] = dict(t)
 
     async def broadcast(self, message: dict):
         """Всем в комнате."""
@@ -119,6 +142,7 @@ def get_room(room_id: str) -> Room:
                 room.gm_id = g["gmId"]
                 break
         rooms[room_id] = room
+    room.seed_tokens_if_empty()
     return room
 
 
@@ -153,6 +177,8 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     await ws.send_text(json.dumps({"type": "log.snapshot", "log": room.log[-50:]}, ensure_ascii=False))
     # и текущий состав мест из БД (если игра существует)
     await ws.send_text(json.dumps({"type": "seat.updated", "seats": db.list_seats(room_id)}, ensure_ascii=False))
+    # и текущая раскладка токенов сцены — чтобы новый клиент догнал карту (по образцу snapshot)
+    await ws.send_text(json.dumps({"type": "tokens.snapshot", "tokens": list(room.tokens.values())}, ensure_ascii=False))
     # и его собственный персонаж (личное сообщение, по образцу log/catalog.snapshot)
     if character is not None:
         await ws.send_text(json.dumps({"type": "character.snapshot", "character": character}, ensure_ascii=False))
@@ -258,8 +284,31 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
             await room.send_to([member_id], {"type": "seat.denied", "reason": "taken"})
         return
 
-    # TODO: token.move (проверять ownerId), scene.switch (gm only),
-    #       combat.start/next (gm only), audio.play (gm only), fog.reveal (gm only)
+    # --- движение токена: проверка прав на сервере (источник истины) ---
+    if mtype == "token.move":
+        token = room.tokens.get(msg.get("tokenId"))
+        if token is None:
+            return  # нет такого токена — молча игнорируем
+        # право двигать: GM двигает ЛЮБОЙ токен; игрок — только тот, чей
+        # controlledBy == его member_id. Чужой токен сервер не двигает, что бы
+        # клиент ни прислал (он мог нарисовать у себя что угодно).
+        if role != "gm" and token.get("controlledBy") != member_id:
+            return
+        to = msg.get("to") or {}
+        try:
+            x, y = int(to.get("x")), int(to.get("y"))
+        except (TypeError, ValueError):
+            return
+        # клампим в [0, GRID_MAX] — защита от заброса за карту
+        x = max(0, min(GRID_MAX, x))
+        y = max(0, min(GRID_MAX, y))
+        token["x"], token["y"] = x, y
+        await room.broadcast({"type": "token.moved", "tokenId": token["id"],
+                              "to": {"x": x, "y": y}, "by": member_id})
+        return
+
+    # TODO: scene.switch (gm only), combat.start/next (gm only),
+    #       audio.play (gm only), fog.reveal (gm only)
 
 
 @app.get("/health")
