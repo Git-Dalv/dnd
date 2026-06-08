@@ -71,16 +71,19 @@ class Catalog:
         self.classes: dict[str, dict] = {}
         self.races: dict[str, dict] = {}
         self.backgrounds: dict[str, dict] = {}
+        # бестиарий: статблоки существ (форма character-schema, npc:true при постановке)
+        self.creatures: dict[str, dict] = {}
 
     def load(self) -> "Catalog":
         """Грузит srd → затем homebrew ПОВЕРХ (homebrew может переопределить
         запись по id). Битые/отсутствующие файлы пропускаются."""
-        for d in (self.spells, self.items, self.classes, self.races, self.backgrounds):
+        for d in (self.spells, self.items, self.classes, self.races, self.backgrounds, self.creatures):
             d.clear()
-        # имя файла -> в какой словарь грузить (по подстроке)
+        # имя файла -> в какой словарь грузить (по подстроке). "creature" не
+        # пересекается с другими ключами — creatures.json матчится только сюда.
         routes = [("spell", self.spells), ("item", self.items),
                   ("class", self.classes), ("race", self.races),
-                  ("background", self.backgrounds)]
+                  ("background", self.backgrounds), ("creature", self.creatures)]
         # порядок важен: srd первым, homebrew последним (перекрывает)
         for section in ("srd", "homebrew"):
             section_dir = self.data_dir / section
@@ -114,6 +117,7 @@ class Catalog:
             "classes": [_strip_comments(r) for r in self.classes.values()],
             "races": [_strip_comments(r) for r in self.races.values()],
             "backgrounds": [_strip_comments(r) for r in self.backgrounds.values()],
+            "creatures": [_strip_comments(r) for r in self.creatures.values()],
         }
 
 
