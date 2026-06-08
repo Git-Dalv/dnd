@@ -75,10 +75,10 @@ GRID_MAX = 60
 # 'gm' (двигает только мастер) либо memberId игрока (двигает только он). GM
 # двигает любой токен; игрок — только свой. Позиции (x,y) — в КЛЕТКАХ.
 DEFAULT_TOKENS = [
-    {"id": "tok_liandra", "name": "Лиэндра", "x": 3,  "y": 6, "enemy": False, "controlledBy": "player_dana"},
-    {"id": "tok_torin",   "name": "Торин",   "x": 5,  "y": 4, "enemy": False, "controlledBy": "player_max"},
-    {"id": "tok_goblin1", "name": "Гоблин",  "x": 8,  "y": 3, "enemy": True,  "controlledBy": "gm"},
-    {"id": "tok_goblin2", "name": "Гоблин",  "x": 10, "y": 5, "enemy": True,  "controlledBy": "gm"},
+    {"id": "tok_liandra", "name": "Лиэндра", "x": 3,  "y": 6, "enemy": False, "controlledBy": "player_dana", "hp": {"current": 22, "max": 27}, "conditions": []},
+    {"id": "tok_torin",   "name": "Торин",   "x": 5,  "y": 4, "enemy": False, "controlledBy": "player_max",  "hp": {"current": 31, "max": 48}, "conditions": []},
+    {"id": "tok_goblin1", "name": "Гоблин",  "x": 8,  "y": 3, "enemy": True,  "controlledBy": "gm", "hp": {"current": 7, "max": 7}, "conditions": []},
+    {"id": "tok_goblin2", "name": "Гоблин",  "x": 10, "y": 5, "enemy": True,  "controlledBy": "gm", "hp": {"current": 7, "max": 7}, "conditions": []},
 ]
 
 
@@ -92,12 +92,26 @@ class Room:
     # позиции токенов — событие «тика», держим ТОЛЬКО в памяти Room, в БД на каждый
     # ход НЕ пишем (db.py — для событий уровня сессии). id -> токен.
     tokens: dict[str, dict] = field(default_factory=dict)
+    # состояние боя (по образцу room-schema) и режим сцены — сессионное состояние
+    combat: dict = field(default_factory=lambda: {"active": False, "round": 0, "turnIndex": 0, "order": []})
+    mode: str = "explore"  # 'explore' | 'combat'
 
     def seed_tokens_if_empty(self):
         """Один раз кладёт стартовую раскладку, если токенов ещё нет."""
         if not self.tokens:
             for t in DEFAULT_TOKENS:
                 self.tokens[t["id"]] = dict(t)
+
+    def persist_tokens(self):
+        """Снапшот раскладки токенов в БД на СЕССИОННЫХ событиях (дисконнект GM,
+        создание NPC, конец боя). НЕ зовём на каждый token.move: позиции — это
+        событие «тика», частая запись в БД била бы по производительности; в
+        моменте они и так живут в памяти Room. Мерджим, не затирая прочие ключи."""
+        state = db.get_game_state(self.room_id)
+        state["tokens"] = list(self.tokens.values())
+        state["combat"] = self.combat
+        state["mode"] = self.mode
+        db.save_game_state(self.room_id, state)
 
     async def broadcast(self, message: dict):
         """Всем в комнате."""
@@ -141,8 +155,19 @@ def get_room(room_id: str) -> Room:
                 room.name = g["name"]
                 room.gm_id = g["gmId"]
                 break
+        # токены поднимаем из сохранённого состояния игры; сид — только фолбэк
+        state = db.get_game_state(room_id)
+        saved = state.get("tokens")
+        if isinstance(saved, list) and saved:
+            for t in saved:
+                if t.get("id"):
+                    room.tokens[t["id"]] = dict(t)
+        if isinstance(state.get("combat"), dict):
+            room.combat = state["combat"]
+        if state.get("mode") in ("explore", "combat"):
+            room.mode = state["mode"]
         rooms[room_id] = room
-    room.seed_tokens_if_empty()
+    room.seed_tokens_if_empty()   # фолбэк: новая игра без сохранённой раскладки
     return room
 
 
@@ -179,6 +204,9 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     await ws.send_text(json.dumps({"type": "seat.updated", "seats": db.list_seats(room_id)}, ensure_ascii=False))
     # и текущая раскладка токенов сцены — чтобы новый клиент догнал карту (по образцу snapshot)
     await ws.send_text(json.dumps({"type": "tokens.snapshot", "tokens": list(room.tokens.values())}, ensure_ascii=False))
+    # и текущее состояние боя/режима сцены
+    await ws.send_text(json.dumps({"type": "combat.updated", "combat": room.combat}, ensure_ascii=False))
+    await ws.send_text(json.dumps({"type": "mode.set", "mode": room.mode}, ensure_ascii=False))
     # и его собственный персонаж (личное сообщение, по образцу log/catalog.snapshot)
     if character is not None:
         await ws.send_text(json.dumps({"type": "character.snapshot", "character": character}, ensure_ascii=False))
@@ -194,6 +222,9 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
         if room.members.get(member_id) is member:
             room.members.pop(member_id, None)
             db.free_seat(room_id, member_id)   # освобождаем место (событие уровня сессии)
+            # уход GM — сессионное событие: снапшотим текущие позиции токенов в БД
+            if role == "gm":
+                room.persist_tokens()
             await room.broadcast({"type": "member.connection", "memberId": member_id, "connected": False})
             await room.broadcast({"type": "seat.updated", "seats": db.list_seats(room_id)})
 
@@ -305,6 +336,152 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
         token["x"], token["y"] = x, y
         await room.broadcast({"type": "token.moved", "tokenId": token["id"],
                               "to": {"x": x, "y": y}, "by": member_id})
+        return
+
+    # --- изменение HP токена: та же модель прав, что у token.move ---
+    if mtype == "token.hp":
+        token = room.tokens.get(msg.get("tokenId"))
+        if token is None:
+            return
+        # GM меняет HP любому; игрок — только своему токену (controlledBy)
+        if role != "gm" and token.get("controlledBy") != member_id:
+            return
+        hp = token.get("hp") or {"current": 0, "max": 0}
+        mx = int(hp.get("max") or 0)
+        try:
+            if msg.get("set") is not None:
+                cur = int(msg["set"])
+            elif msg.get("delta") is not None:
+                cur = int(hp.get("current", 0)) + int(msg["delta"])
+            else:
+                return
+        except (TypeError, ValueError):
+            return
+        if mx <= 0:
+            mx = max(cur, int(hp.get("current", 0)))   # нет max — берём за потолок текущее/новое
+        cur = max(0, min(mx, cur))
+        token["hp"] = {"current": cur, "max": mx}
+        token["down"] = cur <= 0                        # маркер выбывания
+        await room.broadcast({"type": "token.hp.changed", "tokenId": token["id"],
+                              "hp": token["hp"], "down": token["down"]})
+        room.persist_tokens()                           # HP — сессионное событие (не позиция)
+        return
+
+    # --- состояния токена (poisoned/stunned/...): та же модель прав ---
+    if mtype == "token.condition":
+        token = room.tokens.get(msg.get("tokenId"))
+        if token is None:
+            return
+        if role != "gm" and token.get("controlledBy") != member_id:
+            return
+        conds = list(token.get("conditions") or [])
+        for c in (msg.get("add") or []):
+            if c and c not in conds:
+                conds.append(c)
+        for c in (msg.get("remove") or []):
+            if c in conds:
+                conds.remove(c)
+        token["conditions"] = conds
+        await room.broadcast({"type": "token.condition.changed", "tokenId": token["id"],
+                              "conditions": conds})
+        room.persist_tokens()
+        return
+
+    # --- старт боя: сервер кидает инициативу (gm-only, бросок считает сервер) ---
+    if mtype == "combat.start":
+        if not require_gm(room.members.get(member_id)):
+            return
+        order = []
+        for tid in (msg.get("participants") or []):
+            tok = room.tokens.get(tid)
+            if not tok:
+                continue
+            # модификатор инициативы: из статблока (Ловкость), иначе 0
+            abil = (tok.get("statblock") or {}).get("abilities") or {}
+            dex = abil.get("dex")
+            dex_mod = (int(dex) - 10) // 2 if dex is not None else 0
+            roll = random.randint(1, 20) + dex_mod
+            order.append({"tokenId": tid, "name": tok.get("name", "?"),
+                          "initiative": roll, "dexMod": dex_mod})
+        # сортировка по инициативе (убыв.), ничьи — по Ловкости, затем стабильно
+        order.sort(key=lambda o: (-o["initiative"], -o["dexMod"]))
+        room.combat = {"active": True, "round": 1, "turnIndex": 0, "order": order}
+        room.mode = "combat"
+        await room.broadcast({"type": "combat.updated", "combat": room.combat})
+        await room.broadcast({"type": "mode.set", "mode": room.mode})
+        room.persist_tokens()  # combat/mode — сессионное состояние
+        return
+
+    # --- следующий ход (gm-only) ---
+    if mtype == "combat.next":
+        if not require_gm(room.members.get(member_id)):
+            return
+        c = room.combat
+        if not c.get("active") or not c.get("order"):
+            return
+        c["turnIndex"] += 1
+        if c["turnIndex"] >= len(c["order"]):
+            c["turnIndex"] = 0
+            c["round"] += 1            # полный круг — новый раунд
+        await room.broadcast({"type": "combat.updated", "combat": c})
+        room.persist_tokens()
+        return
+
+    # --- конец боя (gm-only) -> возврат в режим исследования ---
+    if mtype == "combat.end":
+        if not require_gm(room.members.get(member_id)):
+            return
+        room.combat = {"active": False, "round": 0, "turnIndex": 0, "order": []}
+        room.mode = "explore"
+        await room.broadcast({"type": "combat.updated", "combat": room.combat})
+        await room.broadcast({"type": "mode.set", "mode": room.mode})
+        room.persist_tokens()
+        return
+
+    # --- переключение режима сцены (gm-only) ---
+    if mtype == "mode.set":
+        if not require_gm(room.members.get(member_id)):
+            return
+        mode = msg.get("mode")
+        if mode not in ("explore", "combat"):
+            return
+        room.mode = mode
+        await room.broadcast({"type": "mode.set", "mode": mode})
+        room.persist_tokens()
+        return
+
+    # --- создание NPC-фишек: только мастер (проверка прав на сервере) ---
+    if mtype == "npc.create":
+        if not require_gm(room.members.get(member_id)):
+            return  # gm-only: игроку молча отказываем
+        statblock = dict(msg.get("statblock") or {})
+        statblock["npc"] = True                       # единая структура с character-schema
+        base_name = statblock.get("name") or "NPC"
+        try:
+            count = int(msg.get("count", 1))
+        except (TypeError, ValueError):
+            count = 1
+        count = max(1, min(20, count))
+        try:
+            bx, by = int(msg.get("x", 5)), int(msg.get("y", 5))
+        except (TypeError, ValueError):
+            bx, by = 5, 5
+        added = []
+        for i in range(count):
+            tok_id = "tok_npc_" + secrets.token_hex(3)
+            name = base_name if count == 1 else f"{base_name} {i + 1}"
+            # копии чуть смещаем, чтобы не легли в одну клетку; клампим в карту
+            x = max(0, min(GRID_MAX, bx + (i % 5)))
+            y = max(0, min(GRID_MAX, by + (i // 5)))
+            hp = dict(statblock.get("hp") or {"current": 1, "max": 1})
+            tok = {"id": tok_id, "name": name, "x": x, "y": y, "enemy": True,
+                   "controlledBy": "gm", "statblock": dict(statblock),
+                   "hp": hp, "conditions": [], "down": False}
+            room.tokens[tok_id] = tok
+            added.append(tok)
+        room.persist_tokens()                          # сессионное событие — сохраняем
+        for tok in added:
+            await room.broadcast({"type": "token.added", "token": tok})
         return
 
     # TODO: scene.switch (gm only), combat.start/next (gm only),

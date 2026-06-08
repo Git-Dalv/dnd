@@ -106,6 +106,27 @@ def list_games() -> list[dict]:
              "gmId": r["gm_id"], "createdAt": r["created_at"]} for r in rows]
 
 
+def get_game_state(room_id: str) -> dict:
+    """Читает games.state (редко меняющееся состояние сцены: токены, позиции,
+    controlledBy). Пустой {}, если игры нет или state пуст/битый."""
+    with connect() as conn:
+        row = conn.execute("SELECT state FROM games WHERE room_id=?", (room_id,)).fetchone()
+    if not row or not row["state"]:
+        return {}
+    try:
+        return json.loads(row["state"])
+    except (TypeError, ValueError):
+        return {}
+
+
+def save_game_state(room_id: str, state: dict) -> None:
+    """Пишет состояние сцены в games.state по room_id. Это «полка» для редкого
+    состояния; живое состояние сессии (подключения, лог) остаётся в памяти Room."""
+    with connect() as conn:
+        conn.execute("UPDATE games SET state=? WHERE room_id=?",
+                     (json.dumps(state, ensure_ascii=False), room_id))
+
+
 # ---- персонажи ------------------------------------------------------------
 
 def create_character(char_id: str, room_id: str, data: dict, owner_id: str | None) -> dict:
