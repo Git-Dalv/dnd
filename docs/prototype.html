@@ -363,6 +363,11 @@
   .win-x { background: transparent; border: none; color: var(--ink-dim); font-size: 18px; cursor: pointer; flex-shrink: 0; }
   .win-x:hover { color: #d98a7a; }
   .win-body { padding: 12px 16px; overflow-y: auto; }
+  .win-body label { display: block; font-size: 11px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: .05em; margin: 12px 0 4px; }
+  .win-body input, .win-body textarea { width: 100%; background: var(--bg); border: 1px solid var(--edge-bright); border-radius: 5px; color: var(--ink); font-family: 'Spectral'; font-size: 14px; padding: 8px 10px; }
+  .win-body .row { display: flex; gap: 10px; } .win-body .row > div { flex: 1; }
+  .map-prev { width: 100%; height: 140px; margin-top: 8px; border: 1px solid var(--edge-bright); border-radius: 6px;
+    background: #241c14 center/contain no-repeat; }
 
   /* строки книги способностей */
   .spell-row { display: flex; align-items: center; gap: 10px; padding: 8px; border-bottom: 1px solid var(--edge); cursor: pointer; }
@@ -492,6 +497,7 @@
         <div class="dev-tool" data-tool="grid" title="Сетка">▦</div>
         <div class="dev-tool" data-tool="scenes" title="Сцены">🗺</div>
         <div class="dev-tool" data-tool="notes" title="Заметки мастера">📝</div>
+        <div class="dev-tool" data-tool="export" title="Экспорт сцены в PNG">📤</div>
         <div class="dev-tool" data-tool="delete" title="Удалить">🗑</div>
       </div>
       <!-- выбор шаблона NPC (виден, когда активен инструмент NPC) -->
@@ -651,6 +657,13 @@
     <div class="win-body" id="sceneBody"></div>
   </div>
 </div>
+<!-- параметры сцены: имя, карта (PNG), сетка, туман, мета -->
+<div class="win-back" id="sceneParamsWin">
+  <div class="win">
+    <div class="win-head"><h3>🗺 Параметры сцены</h3></div>
+    <div class="win-body" id="sceneParamsBody"></div>
+  </div>
+</div>
 <!-- приватные заметки мастера (видны только GM, хранятся в БД) -->
 <div class="win-back" id="notesWin">
   <div class="win">
@@ -698,7 +711,10 @@
     fog: [],                      // открытые клетки тумана [[x,y],...] (сервер)
     scenes: [],                   // список сцен [{id,name}] (сервер)
     activeSceneId: null,          // id активной сцены
-    scene: { map: null, grid: { size: 48, offsetX: 0, offsetY: 0 } },  // активная сцена (фон/сетка)
+    scenarios: [],                // сценарии [{id,name,description,sceneIds,activeSceneId}]
+    activeScenarioId: null,       // активный сценарий
+    scene: { map: null, mapAssetId: null, grid: { size: 48, offsetX: 0, offsetY: 0 },
+             fogEnabled: false, notes: '', searchKey: '', description: '' },  // активная сцена
   };
 
   // ===================================================================
@@ -833,18 +849,25 @@
       store.activeSceneId = msg.activeSceneId || store.activeSceneId;
       renderScenesTool();
     },
+    // список сценариев (наборов сцен) и активный
+    'scenario.list': (msg) => {
+      store.scenarios = msg.scenarios || [];
+      store.activeScenarioId = msg.activeScenarioId || null;
+      if (document.getElementById('sceneWin').classList.contains('show')) renderScenesTool();
+    },
     // переключение/полное состояние сцены: фон+сетка+токены+туман
     'scene.switched': (msg) => {
       store.activeSceneId = msg.sceneId;
       applyScene(msg.state || {});
     },
-    // изменены фон/сетка активной сцены
+    // изменены параметры активной сцены (фон/сетка/туман/мета) — применяем целиком
     'scene.updated': (msg) => {
       if (msg.sceneId !== store.activeSceneId) return;
-      if ('map' in msg) store.scene.map = msg.map;
-      if (msg.grid) store.scene.grid = msg.grid;
+      if (msg.state) applySceneMeta(msg.state);
       renderMapBg();
       applyGrid(store.scene.grid);
+      renderFog();                 // fogEnabled мог измениться
+      renderDevTools();            // показать/скрыть кисти тумана
     },
     // приватные заметки мастера (только gm их получает)
     'notes.snapshot': (msg) => {
@@ -1143,6 +1166,8 @@
     document.getElementById(k + 'X').onclick = () => closeWin(k + 'Win');
     back.onclick = (e) => { if (e.target === back) closeWin(k + 'Win'); };   // клик по фону закрывает
   }
+  // окно параметров сцены закрывается кликом по фону (своя кнопка Отмена внутри)
+  { const back = document.getElementById('sceneParamsWin'); back.onclick = (e) => { if (e.target === back) back.classList.remove('show'); }; }
   document.getElementById('spellsSearch').oninput = () => fillSpells();
 
   // Книга способностей: полный список действий (строки) с поиском; клик = бросок.
@@ -1625,6 +1650,16 @@
     });
   }
 
+  // кисти тумана видны только если у активной сцены включён туман (город — без)
+  function renderDevTools() {
+    const fogOn = !!(store.scene && store.scene.fogEnabled);
+    document.querySelectorAll('.dev-tool[data-tool="fog-reveal"],.dev-tool[data-tool="fog-hide"]')
+      .forEach(b => { b.style.display = fogOn ? '' : 'none'; });
+    if (!fogOn && (activeTool === 'fog-reveal' || activeTool === 'fog-hide')) {
+      activeTool = null;
+      document.querySelectorAll('.dev-tool').forEach(b => b.classList.remove('active'));
+    }
+  }
   if (store.me.dev) {
     const stageEl = document.querySelector('.stage');
     if (stageEl) stageEl.classList.add('dev');     // показывает .dev-palette
@@ -1632,6 +1667,7 @@
     document.querySelectorAll('.dev-tool').forEach(btn => {
       btn.onclick = () => {
         const t = btn.dataset.tool;
+        if (t === 'export') { exportScenePng(); return; }   // действие, не режим
         activeTool = (activeTool === t) ? null : t; // повторный клик — выключить
         document.querySelectorAll('.dev-tool').forEach(b => b.classList.toggle('active', b.dataset.tool === activeTool));
         document.getElementById('npcTemplates').classList.toggle('show', activeTool === 'npc');
@@ -1640,6 +1676,7 @@
         if (activeTool === 'notes') openNotesTool();
       };
     });
+    renderDevTools();
   }
   // постановка NPC из ВЫБРАННОГО шаблона (S6) — тот же npc.create, что и в бою
   function placeNpcAt(cx, cy) {
@@ -1763,6 +1800,8 @@
   function renderFog() {
     const layer = document.getElementById('fogLayer');
     if (!layer) return;
+    // туман рисуем ТОЛЬКО если он включён у сцены (город — без тумана)
+    if (!store.scene || !store.scene.fogEnabled) { layer.innerHTML = ''; return; }
     const FOG_COLS = 64, FOG_ROWS = 44;   // экстент мира в клетках (под map-world 3000x2000)
     const revealed = new Set((store.fog || []).map(c => c[0] + ',' + c[1]));
     layer.classList.toggle('dev', !!(store.me && store.me.dev));
@@ -1835,10 +1874,15 @@
   renderTokens();
   renderFog();   // первичная отрисовка тумана (GRID уже объявлен выше)
 
-  // ---- сцены (S5): фон-карта, сетка, переключение ----
+  // ---- сцены (S5/SC3): фон-карта (из assets), сетка, туман, мета ----
   function renderMapBg() {
     const bg = document.getElementById('mapBg');
-    if (bg) bg.style.backgroundImage = store.scene.map ? `url(${store.scene.map})` : 'none';
+    if (!bg) return;
+    // приоритет — загруженный PNG (assets), иначе путь из библиотеки
+    let url = null;
+    if (store.scene.mapAssetId) url = `/api/games/${encodeURIComponent(net.room)}/assets/${store.scene.mapAssetId}`;
+    else if (store.scene.map) url = store.scene.map;
+    bg.style.backgroundImage = url ? `url(${url})` : 'none';
   }
   function applyGrid(grid) {
     GRID = (grid && grid.size) || 48;
@@ -1848,24 +1892,177 @@
     renderTokens();
     renderFog();
   }
+  // применяет МЕТА сцены (без токенов/тумана) в store.scene
+  function applySceneMeta(state) {
+    store.scene = {
+      map: state.map || null, mapAssetId: state.mapAssetId || null,
+      grid: state.grid || { size: 48, offsetX: 0, offsetY: 0 },
+      fogEnabled: !!state.fogEnabled, notes: state.notes || '',
+      searchKey: state.searchKey || '', description: state.description || '',
+    };
+  }
   function applyScene(state) {
     store.tokens = state.tokens || [];
     store.fog = state.fog || [];
-    store.scene = { map: state.map || null, grid: state.grid || { size: 48, offsetX: 0, offsetY: 0 } };
+    applySceneMeta(state);
     renderMapBg();
     applyGrid(store.scene.grid);        // пересобирает токены/фог под новую сетку
+    renderDevTools();                   // кисти тумана зависят от fogEnabled
   }
   function renderScenesTool() {
     const body = document.getElementById('sceneBody');
     if (!body) return;
-    body.innerHTML = (store.scenes || []).map(s =>
-      `<div class="spell-row" data-sid="${s.id}"><div class="spell-main"><div class="spell-name">${esc(s.name)}${s.id === store.activeSceneId ? ' ✦' : ''}</div></div></div>`).join('')
-      + '<div class="tok-controls"><button class="tok-cond-btn" id="sceneNew">＋ Новая сцена</button><button class="tok-cond-btn" id="sceneMap">Задать фон</button></div>';
+    const scn = (store.scenarios || []).find(s => s.id === store.activeScenarioId);
+    const ids = scn ? (scn.sceneIds || []) : (store.scenes || []).map(s => s.id);  // нет сценария → все сцены
+    const inScn = (store.scenes || []).filter(s => ids.includes(s.id));
+    let html = '<label style="display:block;font-size:11px;color:var(--ink-dim);margin:2px 0 4px">Сценарий</label>';
+    html += '<select id="scnSel">' + (store.scenarios.length ? '' : '<option value="">— нет —</option>')
+      + (store.scenarios || []).map(s => `<option value="${s.id}" ${s.id === store.activeScenarioId ? 'selected' : ''}>${esc(s.name)}</option>`).join('') + '</select>';
+    html += '<div class="tok-controls"><button class="tok-cond-btn" id="scnNew">＋ Сценарий</button></div>';
+    html += inScn.map(s => {
+      const active = s.id === store.activeSceneId;
+      return `<div class="spell-row"><div class="spell-main" data-sid="${s.id}" style="cursor:pointer"><div class="spell-name">${esc(s.name)}${active ? ' ✦' : ''}</div></div>`
+        + `${active ? '<button class="tok-cond-btn" data-edit="1">✎</button>' : ''}`
+        + `${scn ? `<button class="tok-cond-btn" data-rm="${s.id}">−</button>` : ''}</div>`;
+    }).join('');
+    const out = (store.scenes || []).filter(s => !ids.includes(s.id));
+    html += '<div class="tok-controls"><button class="tok-cond-btn" id="sceneNew">＋ Новая сцена</button>'
+      + (scn && out.length ? '<button class="tok-cond-btn" id="sceneAdd">+ существующую</button>' : '') + '</div>';
+    body.innerHTML = html;
     body.querySelectorAll('[data-sid]').forEach(r => r.onclick = () => net.send({ type: 'scene.switch', sceneId: r.dataset.sid }));
-    document.getElementById('sceneNew').onclick = () => { const n = prompt('Имя сцены', 'Подземелье'); if (n) net.send({ type: 'scene.create', name: n }); };
-    document.getElementById('sceneMap').onclick = () => { const m = prompt('Путь к фону (из библиотеки)', store.scene.map || 'assets/maps/'); if (m !== null) net.send({ type: 'scene.config', sceneId: store.activeSceneId, map: m }); };
+    const ed = body.querySelector('[data-edit]'); if (ed) ed.onclick = () => openSceneParams(store.activeSceneId);
+    body.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => net.send({ type: 'scenario.removeScene', scenarioId: store.activeScenarioId, sceneId: b.dataset.rm }));
+    document.getElementById('scnSel').onchange = (e) => { if (e.target.value) net.send({ type: 'scenario.activate', scenarioId: e.target.value }); };
+    document.getElementById('scnNew').onclick = () => { const n = prompt('Имя сценария', 'Подземелье Зевающего портала'); if (n) net.send({ type: 'scenario.create', name: n }); };
+    document.getElementById('sceneNew').onclick = () => openSceneParams(null);
+    const addBtn = document.getElementById('sceneAdd');
+    if (addBtn) addBtn.onclick = () => {
+      const list = out.map((s, i) => `${i + 1}) ${s.name}`).join('\n');
+      const pick = parseInt(prompt('Добавить сцену в сценарий:\n' + list, '1'), 10);
+      const s = out[pick - 1];
+      if (s) net.send({ type: 'scenario.addScene', scenarioId: store.activeScenarioId, sceneId: s.id });
+    };
   }
   function openScenesTool() { renderScenesTool(); document.getElementById('sceneWin').classList.add('show'); }
+
+  // SC6: экспорт текущей сцены (фон+сетка+токены+туман) в PNG-файл на скачивание.
+  // Карта с того же origin (/api/.../assets) — canvas не «грязный», toBlob работает.
+  function exportScenePng() {
+    const sceneName = (store.scenes.find(s => s.id === store.activeSceneId) || {}).name || 'scene';
+    // граница экспорта — по токенам (+поле), не меньше 12x9 клеток
+    let maxX = 12, maxY = 9;
+    for (const t of (store.tokens || [])) { maxX = Math.max(maxX, t.x + 2); maxY = Math.max(maxY, t.y + 2); }
+    const W = maxX * GRID, H = maxY * GRID;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#16130d'; ctx.fillRect(0, 0, W, H);
+
+    const drawRest = () => {
+      // сетка
+      ctx.strokeStyle = 'rgba(201,162,83,.18)'; ctx.lineWidth = 1;
+      for (let x = GRID_OFFSET.x; x <= W; x += GRID) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+      for (let y = GRID_OFFSET.y; y <= H; y += GRID) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+      // токены: круг + имя
+      for (const t of (store.tokens || [])) {
+        if (t.hidden && !(store.me && (store.me.dev || store.me.role === 'gm'))) continue;
+        const cx = t.x * GRID + GRID_OFFSET.x + GRID / 2, cy = t.y * GRID + GRID_OFFSET.y + GRID / 2, r = GRID * 0.42;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = t.enemy ? '#5a201a' : '#20323f'; ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = t.enemy ? '#8a2e22' : '#c9a253'; ctx.stroke();
+        ctx.fillStyle = '#e8ddc7'; ctx.font = `${Math.round(GRID * 0.2)}px Spectral, serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText((t.name || '').slice(0, 8), cx, cy);
+      }
+      // туман (если включён)
+      if (store.scene && store.scene.fogEnabled) {
+        const revealed = new Set((store.fog || []).map(c => c[0] + ',' + c[1]));
+        ctx.fillStyle = 'rgba(8,6,4,.92)';
+        for (let y = 0; y * GRID < H; y++) for (let x = 0; x * GRID < W; x++) {
+          if (!revealed.has(x + ',' + y)) ctx.fillRect(x * GRID + GRID_OFFSET.x, y * GRID + GRID_OFFSET.y, GRID, GRID);
+        }
+      }
+      cv.toBlob((blob) => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = sceneName + '.png';
+        a.click(); URL.revokeObjectURL(a.href);
+      }, 'image/png');
+    };
+
+    const mapUrl = store.scene.mapAssetId
+      ? `/api/games/${encodeURIComponent(net.room)}/assets/${store.scene.mapAssetId}`
+      : (store.scene.map || null);
+    if (mapUrl) {
+      const img = new Image();
+      img.onload = () => { ctx.drawImage(img, 0, 0, W, H); drawRest(); };
+      img.onerror = drawRest;
+      img.src = mapUrl;
+    } else drawRest();
+  }
+
+  // окно параметров сцены (создание sceneId=null / редактирование активной)
+  let sceneParamAssetId = null;   // загруженный mapAssetId (ожидает сохранения)
+  function openSceneParams(sceneId) {
+    const editing = !!sceneId;
+    const s = editing ? store.scene : { map: null, mapAssetId: null, fogEnabled: false, notes: '', searchKey: '', description: '', grid: { size: 48 } };
+    const name = editing ? (store.scenes.find(x => x.id === sceneId) || {}).name || '' : '';
+    sceneParamAssetId = s.mapAssetId || null;
+    const body = document.getElementById('sceneParamsBody');
+    body.innerHTML = `
+      <label>Имя сцены</label><input id="sp-name" value="${esc(name)}" placeholder="Пещера гоблинов">
+      <label>Карта (PNG)</label><input type="file" id="sp-map" accept="image/*">
+      <div class="map-prev" id="sp-prev"></div>
+      <label>Размер клетки (px)</label><input type="number" id="sp-grid" value="${(s.grid && s.grid.size) || 48}" min="8" max="256">
+      <label style="display:flex;align-items:center;gap:8px;text-transform:none;margin-top:14px">
+        <input type="checkbox" id="sp-fog" ${s.fogEnabled ? 'checked' : ''} style="width:auto"> Туман войны включён</label>
+      <div class="hint" style="color:var(--ink-dim);font-style:italic;font-size:12px">Город — выключить, пещера/подземелье — включить.</div>
+      <label>Заметки мастера</label><textarea id="sp-notes">${esc(s.notes || '')}</textarea>
+      <div class="row"><div><label>Ключ поиска</label><input id="sp-key" value="${esc(s.searchKey || '')}"></div>
+        <div><label>Описание</label><input id="sp-desc" value="${esc(s.description || '')}"></div></div>
+      <div class="tok-controls" style="justify-content:flex-end">
+        <button class="tok-cond-btn" id="sp-cancel">Отмена</button>
+        <button class="tok-cond-btn" id="sp-save" style="color:var(--gold-bright);border-color:var(--gold)">Сохранить</button>
+      </div>`;
+    const prev = document.getElementById('sp-prev');
+    const showPrev = () => {
+      const url = sceneParamAssetId ? `/api/games/${encodeURIComponent(net.room)}/assets/${sceneParamAssetId}` : (s.map || null);
+      prev.style.backgroundImage = url ? `url(${url})` : 'none';
+    };
+    showPrev();
+    document.getElementById('sp-map').onchange = (e) => uploadSceneMap(e.target.files[0], showPrev);
+    document.getElementById('sp-cancel').onclick = () => document.getElementById('sceneParamsWin').classList.remove('show');
+    document.getElementById('sp-save').onclick = () => {
+      const payload = {
+        name: document.getElementById('sp-name').value.trim() || 'Сцена',
+        mapAssetId: sceneParamAssetId || null,
+        grid: { size: parseInt(document.getElementById('sp-grid').value, 10) || 48 },
+        fogEnabled: document.getElementById('sp-fog').checked,
+        notes: document.getElementById('sp-notes').value,
+        searchKey: document.getElementById('sp-key').value,
+        description: document.getElementById('sp-desc').value,
+      };
+      if (editing) net.send({ type: 'scene.config', sceneId, ...payload });
+      else net.send({ type: 'scene.create', ...payload });
+      document.getElementById('sceneParamsWin').classList.remove('show');
+      document.getElementById('sceneWin').classList.remove('show');
+    };
+    document.getElementById('sceneParamsWin').classList.add('show');
+  }
+  // загрузка карты в assets: узнаём размеры через Image, шлём байты по HTTP
+  function uploadSceneMap(file, after) {
+    if (!file) return;
+    const img = new Image();
+    img.onload = async () => {
+      try {
+        const url = `/api/games/${encodeURIComponent(net.room)}/assets?kind=map&width=${img.naturalWidth}&height=${img.naturalHeight}`;
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': file.type }, body: file });
+        if (!res.ok) throw new Error('http ' + res.status);
+        sceneParamAssetId = (await res.json()).assetId;
+        if (after) after();
+      } catch (e) { /* тихо: можно повторить выбор файла */ }
+      URL.revokeObjectURL(img.src);
+    };
+    img.src = URL.createObjectURL(file);
+  }
   function openGridTool() {
     const g = store.scene.grid || { size: 48, offsetX: 0, offsetY: 0 };
     const size = parseInt(prompt('Размер клетки (px)', g.size), 10);
