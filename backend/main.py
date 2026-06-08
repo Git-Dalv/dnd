@@ -20,14 +20,21 @@ from fastapi.staticfiles import StaticFiles
 
 try:
     from . import db                 # запуск как пакет (uvicorn backend.main:app)
+    from .catalog import Catalog, resolve_character
 except ImportError:                  # noqa: запуск из каталога backend/ (uvicorn main:app)
     import db
+    from catalog import Catalog, resolve_character
+
+# Справочник контента в памяти. Загружается при старте; используется, чтобы
+# собрать действия персонажа { ref, overrides } перед отправкой на стол.
+content_catalog = Catalog()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # БД поднимаем при старте — это «полка», с которой комнаты встают после рестарта.
     db.init_db()
+    content_catalog.load()
     yield
 
 
@@ -57,6 +64,8 @@ class Member:
     name: str
     role: str  # "gm" | "player"
     ws: WebSocket
+    char_id: str | None = None
+    char_name: str | None = None   # имя персонажа для журнала (а не member_id)
 
 
 @dataclass
@@ -115,11 +124,31 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     member = Member(member_id, name, role, ws)
     room.members[member_id] = member
 
+    # персонаж участника: char_id из query (его передаёт экран мест при входе),
+    # иначе — из занятого места в БД. Действия { ref, overrides } собираем
+    # каталогом, чтобы стол получил готовые rolls с modifier.
+    char_id = ws.query_params.get("char")
+    if not char_id:
+        for s in db.list_seats(room_id):
+            if s.get("memberId") == member_id:
+                char_id = s.get("charId")
+                break
+    character = None
+    if char_id:
+        raw = db.get_character(char_id)
+        if raw:
+            character = resolve_character(content_catalog, raw)
+    member.char_id = char_id
+    member.char_name = character.get("name") if character else None
+
     await room.broadcast({"type": "member.connection", "memberId": member_id, "connected": True})
     # новому участнику — хвост журнала, чтобы догнал состояние
     await ws.send_text(json.dumps({"type": "log.snapshot", "log": room.log[-50:]}, ensure_ascii=False))
     # и текущий состав мест из БД (если игра существует)
     await ws.send_text(json.dumps({"type": "seat.updated", "seats": db.list_seats(room_id)}, ensure_ascii=False))
+    # и его собственный персонаж (личное сообщение, по образцу log/catalog.snapshot)
+    if character is not None:
+        await ws.send_text(json.dumps({"type": "character.snapshot", "character": character}, ensure_ascii=False))
 
     try:
         while True:
@@ -145,9 +174,11 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
             rolls, total = roll_dice(msg.get("notation", ""), int(msg.get("modifier", 0)))
         except ValueError:
             return
+        member = room.members.get(member_id)
+        by = (member.char_name or member.name) if member else member_id  # имя персонажа в журнале
         event = {
             "type": "dice.rolled",
-            "by": member_id,
+            "by": by,
             "label": msg.get("label", ""),
             "rolled": rolls,
             "total": total,

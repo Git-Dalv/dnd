@@ -313,22 +313,8 @@
       </div>
     </div>
     <!-- sheet view -->
-    <div class="sheet" id="view-sheet">
-      <h2>Лиэндра · Волшебница 5 ур.</h2>
-      <div class="stat-grid">
-        <div class="stat-box"><div class="lbl">Сила</div><div class="val">8</div><div class="mod">−1</div></div>
-        <div class="stat-box"><div class="lbl">Ловк</div><div class="val">14</div><div class="mod">+2</div></div>
-        <div class="stat-box"><div class="lbl">Тело</div><div class="val">13</div><div class="mod">+1</div></div>
-        <div class="stat-box"><div class="lbl">Инт</div><div class="val">18</div><div class="mod">+4</div></div>
-        <div class="stat-box"><div class="lbl">Мудр</div><div class="val">12</div><div class="mod">+1</div></div>
-        <div class="stat-box"><div class="lbl">Хар</div><div class="val">10</div><div class="mod">+0</div></div>
-      </div>
-      <div class="sheet-row"><span><b>КД:</b> 13</span><span><b>Скорость:</b> 30 фт</span><span><b>Бонус мастерства:</b> +3</span><span><b>Инициатива:</b> +2</span></div>
-      <div class="sheet-row"><b>Спасброски:</b> Инт +7, Мудр +4</div>
-      <div class="sheet-row"><b>Владения:</b> Магия +7, История +7, Расследование +7</div>
-      <div class="sheet-row"><b>Языки:</b> Общий, Эльфийский, Драконий</div>
-      <div class="sheet-row"><b>Снаряжение:</b> Посох, книга заклинаний, мантия архимага, 45 зм</div>
-    </div>
+    <!-- карточка персонажа — наполняется renderSheet() из store.character -->
+    <div class="sheet" id="view-sheet"></div>
     <!-- journal view -->
     <div class="journal" id="view-journal">
       <h2>Дневник кампании</h2>
@@ -363,77 +349,28 @@
         <div class="hb-tab" data-hb="inv">Инвентарь</div>
       </div>
       <div class="hb-body">
-        <div class="hp-orb"><div class="hp-val">22</div><div class="hp-max">/ 27</div></div>
+        <!-- всё ниже наполняется renderHotbar() из store.character -->
+        <div class="hp-orb" id="hpOrb"><div class="hp-val">—</div><div class="hp-max"></div></div>
         <div class="hb-content">
-          <!-- abilities -->
-          <div class="action-icons" id="hb-abilities">
-            <div class="act" title="Атака">⚔️</div>
-            <div class="act" title="Огненный снаряд">🔥</div>
-            <div class="act" title="Огненный шар">💥</div>
-            <div class="act" title="Щит">🛡️</div>
-            <div class="act" title="Лечение">✨</div>
-            <div class="act" title="Молния">⚡</div>
-            <div class="act" title="Зелье">🧪</div>
-          </div>
-          <!-- char (выжимка) -->
-          <div class="hb-text" id="hb-char" style="display:none">
-            <span><b>КД</b> 13</span><span><b>Скор</b> 30фт</span><span><b>Иниц</b> +2</span>
-            <span><b>Инт</b> +4</span><span><b>Спас Инт</b> +7</span><span><b>Концентрация:</b> Огн. шар</span>
-          </div>
-          <!-- inventory -->
-          <div class="hb-text" id="hb-inv" style="display:none">
-            <span>📕 Книга заклинаний</span><span>🧪 Зелье лечения ×2</span><span>🗝 Ключ от склада</span><span>💰 45 зм</span>
-          </div>
+          <div class="action-icons" id="hb-abilities"></div>
+          <div class="hb-text" id="hb-char" style="display:none"></div>
+          <div class="hb-text" id="hb-inv" style="display:none"></div>
         </div>
-        <div class="slots">
-          <div class="slots-label">Ячейки</div>
-          <div class="slot-row"><span class="slot-lvl">1</span><span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="pip spent"></span></div>
-          <div class="slot-row"><span class="slot-lvl">2</span><span class="pip"></span><span class="pip"></span><span class="pip spent"></span></div>
-          <div class="slot-row"><span class="slot-lvl">3</span><span class="pip"></span><span class="pip spent"></span></div>
-        </div>
+        <div class="slots" id="hbSlots"></div>
       </div>
     </div>
   </div>
 
   <!-- RIGHT PARTY -->
   <div class="party">
-    <div class="video-card dm">
-      <div class="vc-head"><span class="vc-role">Мастер</span> &nbsp;Vlad <span class="vc-conn"></span></div>
-      <div class="vc-video"></div>
-    </div>
+    <!-- видеокарточки — renderParty() из store.seats (подписи занятых мест) -->
+    <div id="partyCards" style="display:flex; flex-direction:column; gap:8px;"></div>
 
     <div class="requests">
       <h3>⚜ Запросы к DM'у</h3>
       <button class="req-btn" data-req="Скрытная проверка">🤫 Скрытная проверка</button>
       <button class="req-btn" data-req="Отойти от группы">🚶 Отойти от группы</button>
       <button class="req-btn" data-req="Личный вопрос мастеру">💬 Личный вопрос</button>
-    </div>
-
-    <div class="video-card">
-      <div class="vc-head">Лиэндра <span class="vc-conn"></span></div>
-      <div class="vc-video"></div>
-      <div class="vc-portrait-row">
-        <div class="vc-portrait"></div>
-        <div class="vc-hp"><div class="vc-hp-num">22 / 27</div><div class="vc-hp-bar"><div class="vc-hp-fill" style="width:81%"></div></div></div>
-      </div>
-    </div>
-
-    <div class="video-card">
-      <div class="vc-head">Торин <span class="vc-conn"></span></div>
-      <div class="vc-video"></div>
-      <div class="vc-portrait-row">
-        <div class="vc-portrait warrior"></div>
-        <div class="vc-hp"><div class="vc-hp-num">31 / 48</div><div class="vc-hp-bar"><div class="vc-hp-fill" style="width:64%"></div></div></div>
-      </div>
-    </div>
-
-    <div class="video-card">
-      <div class="vc-head">Сильвана <span class="vc-conn off"></span></div>
-      <div class="vc-video"></div>
-      <div class="vc-portrait-row">
-        <div class="vc-portrait ranger"></div>
-        <div class="vc-hp"><div class="vc-hp-num">29 / 29</div><div class="vc-hp-bar"><div class="vc-hp-fill" style="width:100%"></div></div></div>
-      </div>
     </div>
 
     <!-- LOG / журнал бросков (наполняется из store.log) -->
@@ -489,6 +426,9 @@
     members: {},
     log: [],
     catalog: { spells: [], items: [] },
+    character: null,              // мой персонаж (собранный сервером)
+    seats: [],                    // состав мест (для подписей видеокарточек)
+    roster: {},                   // charId -> { name, ... } для имён в партии
   };
 
   // ===================================================================
@@ -502,9 +442,10 @@
     const member = q.get('member') || 'guest';
     const role = q.get('role') || 'player';
     const name = q.get('name') || member;
+    const char = q.get('char') || '';   // персонаж с экрана мест — отдаём серверу
 
     const api = {
-      room, member, role, name,
+      room, member, role, name, char,
       ws: null,
       onMessage: null,        // назначается ниже: net.onMessage = fn(msg)
       send(obj) {
@@ -516,7 +457,8 @@
 
     function connect() {
       const url = `ws://${location.host}/ws/${room}/${member}`
-        + `?role=${encodeURIComponent(role)}&name=${encodeURIComponent(name)}`;
+        + `?role=${encodeURIComponent(role)}&name=${encodeURIComponent(name)}`
+        + (char ? `&char=${encodeURIComponent(char)}` : '');
       const ws = new WebSocket(url);
       api.ws = ws;
 
@@ -557,6 +499,17 @@
     'catalog.snapshot': (msg) => {
       store.catalog = { spells: msg.spells || [], items: msg.items || [] };
       renderCodex();
+    },
+    // мой персонаж (собран сервером: rolls с modifier) — личное сообщение
+    'character.snapshot': (msg) => {
+      store.character = msg.character || null;
+      renderSheet();
+      renderHotbar();
+    },
+    // состав мест — для подписей видеокарточек справа
+    'seat.updated': (msg) => {
+      store.seats = msg.seats || [];
+      renderParty();
     },
   };
 
@@ -856,26 +809,162 @@
     }, 0);
   });
 
-  // spell pips
-  document.querySelectorAll('.pip').forEach(p => p.onclick = () => p.classList.toggle('spent'));
-
   // ===================================================================
-  // Намерения броска. КЛИК НЕ МЕНЯЕТ UI: только шлёт dice.roll на сервер.
-  // Журнал обновится позже — из handlers['dice.rolled'], когда сервер
-  // пришлёт посчитанный результат. Локально результат не рисуем.
+  // Карточка / хотбар / партия — рендер ИЗ store (по контракту renderLog/
+  // renderCodex: читают store, без аргументов). Действия шлют dice.roll с
+  // РЕАЛЬНЫМИ notation/modifier из собранного сервером персонажа, а не '1d20'.
   // ===================================================================
+  const ABIL_RU = { str: 'Сила', dex: 'Ловк', con: 'Тело', int: 'Инт', wis: 'Мудр', cha: 'Хар' };
+  const DMG_ICON = { fire: '🔥', cold: '❄️', lightning: '⚡', necrotic: '💀', radiant: '☀️',
+    acid: '🧪', poison: '☠️', thunder: '🔊', psychic: '🌀', force: '✨',
+    bludgeoning: '🔨', slashing: '⚔️', piercing: '🗡️' };
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const abilMod = (score) => Math.floor((Number(score) - 10) / 2);
+  const sign = (n) => (n >= 0 ? '+' : '') + n;
 
-  // иконки действий в hotbar -> бросок (временно у всех 1d20)
-  document.querySelectorAll('.act').forEach(act => {
-    act.onclick = () => {
-      net.send({
-        type: 'dice.roll',
-        notation: '1d20',
-        modifier: 0,
-        label: act.getAttribute('title') || '',
-      });
-    };
-  });
+  function renderSheet() {
+    const el = document.getElementById('view-sheet');
+    if (!el) return;
+    const c = store.character;
+    if (!c) { el.innerHTML = '<h2>Нет персонажа</h2><div class="sheet-row">Выберите персонажа в лобби.</div>'; return; }
+    const m = c.meta || {}, a = c.abilities || {}, d = c.derived || {}, hp = d.hp || {};
+    let stats = '';
+    for (const k of ['str', 'dex', 'con', 'int', 'wis', 'cha']) {
+      const v = (a[k] != null) ? a[k] : '—';
+      const mod = (a[k] != null) ? sign(abilMod(a[k])) : '';
+      stats += `<div class="stat-box"><div class="lbl">${ABIL_RU[k]}</div><div class="val">${v}</div><div class="mod">${mod}</div></div>`;
+    }
+    const skills = (c.skills || []).map(s => `${esc(s.name || s.id)} ${s.roll ? sign(s.roll.modifier) : ''}`.trim()).join(', ');
+    el.innerHTML =
+      `<h2>${esc(c.name || '—')}${m.class ? ' · ' + esc(m.class) : ''}${m.level ? ' ' + m.level + ' ур.' : ''}</h2>` +
+      `<div class="stat-grid">${stats}</div>` +
+      `<div class="sheet-row"><span><b>КД:</b> ${d.ac ?? '—'}</span><span><b>Скорость:</b> ${d.speed ?? '—'} фт</span>` +
+      `<span><b>Бонус мастерства:</b> ${c.proficiencyBonus != null ? sign(c.proficiencyBonus) : '—'}</span>` +
+      `<span><b>Инициатива:</b> ${d.initiative != null ? sign(d.initiative) : '—'}</span></div>` +
+      `<div class="sheet-row"><span><b>Хиты:</b> ${hp.current ?? '—'} / ${hp.max ?? '—'}</span></div>` +
+      (skills ? `<div class="sheet-row"><b>Навыки:</b> ${skills}</div>` : '') +
+      (m.race ? `<div class="sheet-row"><b>Раса:</b> ${esc(m.race)}</div>` : '');
+  }
+
+  function actionPrimaryRoll(act) {
+    const rolls = act.rolls || [];
+    return rolls.find(r => r.type === 'attack') || rolls[0] || null;
+  }
+  function actionIcon(act) {
+    const rolls = act.rolls || [];
+    const dmg = rolls.find(r => r.damageType && DMG_ICON[r.damageType]);
+    if (dmg) return DMG_ICON[dmg.damageType];
+    if (rolls.some(r => r.type === 'heal')) return '✨';
+    if (rolls.some(r => r.type === 'attack')) return '⚔️';
+    return '🎲';
+  }
+
+  function renderHotbar() {
+    const c = store.character;
+
+    const orb = document.getElementById('hpOrb');
+    if (orb) {
+      const hp = (c && c.derived && c.derived.hp) || {};
+      orb.innerHTML = `<div class="hp-val">${hp.current ?? '—'}</div><div class="hp-max">${hp.max != null ? '/ ' + hp.max : ''}</div>`;
+    }
+
+    const icons = document.getElementById('hb-abilities');
+    if (icons) {
+      icons.innerHTML = '';
+      const actions = (c && c.actions) || [];
+      if (!actions.length) {
+        icons.innerHTML = '<span style="color:var(--ink-dim);font-style:italic;font-size:12px;">Нет действий</span>';
+      }
+      for (const act of actions) {
+        const name = act.nameLocal || act.name || 'Действие';
+        const roll = actionPrimaryRoll(act);
+        const div = document.createElement('div');
+        div.className = 'act';
+        div.title = roll ? `${name} (${roll.notation}${roll.modifier ? sign(roll.modifier) : ''})` : name;
+        div.textContent = actionIcon(act);
+        // КЛИК шлёт dice.roll с реальными notation/modifier действия (не '1d20')
+        div.onclick = () => {
+          if (!roll || !roll.notation) return;          // действие без броска (напр. Щит)
+          net.send({
+            type: 'dice.roll',
+            notation: roll.notation,
+            modifier: roll.modifier || 0,
+            label: name + (roll.label ? ' · ' + roll.label : ''),
+          });
+        };
+        icons.appendChild(div);
+      }
+    }
+
+    const comp = document.getElementById('hb-char');
+    if (comp) {
+      if (!c) { comp.innerHTML = ''; }
+      else {
+        const d = c.derived || {}, a = c.abilities || {};
+        comp.innerHTML =
+          `<span><b>КД</b> ${d.ac ?? '—'}</span>` +
+          `<span><b>Скор</b> ${d.speed ?? '—'}фт</span>` +
+          `<span><b>Иниц</b> ${d.initiative != null ? sign(d.initiative) : '—'}</span>` +
+          (a.int != null ? `<span><b>Инт</b> ${sign(abilMod(a.int))}</span>` : '') +
+          `<span><b>Бонус</b> ${c.proficiencyBonus != null ? sign(c.proficiencyBonus) : '—'}</span>`;
+      }
+    }
+
+    const inv = document.getElementById('hb-inv');
+    if (inv) inv.innerHTML = '<span style="color:var(--ink-dim);font-style:italic;">Инвентарь скоро</span>';
+
+    const slots = document.getElementById('hbSlots');
+    if (slots) {
+      const ss = (c && c.resources && c.resources.spellSlots) || {};
+      const levels = Object.keys(ss).sort();
+      let html = '<div class="slots-label">Ячейки</div>', any = false;
+      for (const lvl of levels) {
+        const slot = ss[lvl]; if (!slot) continue;
+        const max = slot.max || 0, cur = slot.current || 0;
+        if (max <= 0) continue;
+        any = true;
+        let pips = '';
+        for (let i = 0; i < max; i++) pips += `<span class="pip${i >= cur ? ' spent' : ''}"></span>`;
+        html += `<div class="slot-row"><span class="slot-lvl">${lvl}</span>${pips}</div>`;
+      }
+      slots.innerHTML = any ? html : '';
+      slots.querySelectorAll('.pip').forEach(p => p.onclick = () => p.classList.toggle('spent'));  // визуальная трата
+    }
+  }
+
+  function renderParty() {
+    const wrap = document.getElementById('partyCards');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    for (const s of (store.seats || [])) {
+      const card = document.createElement('div');
+      card.className = 'video-card' + (s.seatNo === 0 ? ' dm' : '');
+      let label;
+      if (s.seatNo === 0) label = '⚜ Мастер';
+      else {
+        const ch = s.charId && store.roster[s.charId];
+        label = ch ? ch.name : ('Игрок ' + s.seatNo);
+      }
+      const head = document.createElement('div');
+      head.className = 'vc-head';
+      head.innerHTML = `${esc(label)} <span class="vc-conn${s.memberId ? '' : ' off'}"></span>`;
+      const vid = document.createElement('div');
+      vid.className = 'vc-video';
+      card.appendChild(head); card.appendChild(vid);
+      wrap.appendChild(card);
+    }
+  }
+
+  // первичная отрисовка (пустые состояния) до прихода данных
+  renderSheet();
+  renderHotbar();
+  renderParty();
+
+  // ростер персонажей (имена для подписей партии) — read-only из лобби-API
+  fetch(`/api/games/${encodeURIComponent(net.room)}/characters`)
+    .then(r => r.json())
+    .then(list => { store.roster = {}; (list || []).forEach(c => { store.roster[c.charId] = c; }); renderParty(); })
+    .catch(() => {});
 
   // ===================================================================
   // Карта — токены в КЛЕТКАХ (CLAUDE.md: токены хранятся в клетках,
