@@ -431,6 +431,36 @@
     cursor: pointer; transition: all .15s; }
   .codex-tab:hover { color: var(--ink); }
   .codex-tab.active { color: var(--gold-bright); border-color: var(--gold); background: rgba(201,162,83,.1); }
+
+  /* бестиарий: ряд динамических категорий + сетка карточек существ */
+  .bestiary-cats { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px 0; }
+  .bestiary-cats:empty { display: none; }
+  .best-cat { padding: 4px 12px; font-family: 'Cinzel'; font-size: 11px; letter-spacing: .04em;
+    color: var(--ink-dim); border: 1px solid var(--edge); border-radius: 12px; cursor: pointer; transition: all .15s; }
+  .best-cat:hover { color: var(--ink); }
+  .best-cat.active { color: var(--gold-bright); border-color: var(--gold); background: rgba(201,162,83,.12); }
+  .bestiary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; align-content: start; }
+  .bestiary-card { background: linear-gradient(160deg, var(--panel-2), #181309); border: 1px solid var(--edge-bright);
+    border-radius: 8px; padding: 10px; text-align: center; cursor: pointer; transition: all .15s; }
+  .bestiary-card:hover { border-color: var(--gold); box-shadow: 0 0 12px rgba(201,162,83,.25); transform: translateY(-2px); }
+  .bestiary-thumb { width: 100%; height: 84px; border-radius: 6px; border: 1px solid var(--edge); margin-bottom: 8px;
+    display: flex; align-items: center; justify-content: center; font-size: 38px; overflow: hidden;
+    background: radial-gradient(circle at 50% 35%, #2c2418, #14110d); }
+  .bestiary-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .bestiary-name { font-family: 'Cinzel'; font-size: 13px; color: var(--gold-bright); }
+  .bestiary-meta { font-size: 11px; color: var(--ink-dim); margin-top: 3px; }
+  .bestiary-cat { font-size: 10px; color: var(--ink-dim); margin-top: 4px; text-transform: uppercase; letter-spacing: .06em; opacity: .85; }
+
+  /* детальная карточка существа (большой портрет + статблок + «Разместить») */
+  .creature-hero { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 6px; }
+  .creature-portrait { width: 120px; height: 120px; flex-shrink: 0; border-radius: 8px; border: 1px solid var(--edge-bright);
+    display: flex; align-items: center; justify-content: center; font-size: 56px; overflow: hidden;
+    background: radial-gradient(circle at 50% 35%, #2c2418, #14110d); }
+  .creature-portrait img { width: 100%; height: 100%; object-fit: cover; }
+  .creature-place-btn { font-family: 'Cinzel'; font-size: 13px; padding: 11px 18px; margin-top: 14px; width: 100%;
+    border-radius: 5px; cursor: pointer; font-weight: 700; color: #1a140a; border: 1px solid var(--gold);
+    background: linear-gradient(180deg, var(--gold-bright), #6a4a18); }
+  .creature-place-btn:hover { box-shadow: 0 0 12px rgba(232,200,120,.5); }
   .codex-list { flex: 1; overflow-y: auto; padding: 0 8px 12px; display: flex; flex-direction: column; gap: 5px; }
   .codex-row { display: flex; align-items: center; gap: 9px; padding: 7px 8px;
     border: 1px solid transparent; border-radius: 5px; cursor: pointer; transition: all .12s; }
@@ -662,12 +692,26 @@
       <input class="win-search" id="bestiarySearch" type="text" placeholder="Поиск…" autocomplete="off">
       <button class="win-x" id="bestiaryX">✕</button>
     </div>
+    <!-- верхний переключатель disposition (монстры/нейтралы/персонажи) -->
     <div class="codex-tabs" style="padding:10px 16px 0">
-      <div class="codex-tab" data-best-tab="neutral">Нейтралы</div>
-      <div class="codex-tab active" data-best-tab="monster">Монстры</div>
-      <div class="codex-tab" data-best-tab="characters">Персонажи</div>
+      <div class="codex-tab active" data-best-disp="monster">Монстры</div>
+      <div class="codex-tab" data-best-disp="neutral">Нейтралы</div>
+      <div class="codex-tab" data-best-disp="characters">Персонажи</div>
     </div>
-    <div class="win-body" id="bestiaryList"></div>
+    <!-- вкладки-категории (строятся динамически из существующих category) -->
+    <div class="bestiary-cats" id="bestiaryCats"></div>
+    <!-- сетка карточек существ/персонажей -->
+    <div class="win-body bestiary-grid" id="bestiaryList"></div>
+  </div>
+</div>
+<!-- детальная карточка существа (вход в постановку: уровень + «Разместить») -->
+<div class="win-back" id="creatureWin">
+  <div class="win">
+    <div class="win-head">
+      <h3 id="creatureWinTitle">👹 Существо</h3>
+      <button class="win-x" id="creatureX">✕</button>
+    </div>
+    <div class="win-body" id="creatureBody"></div>
   </div>
 </div>
 <!-- сцены песочницы: список/переключение/создание/фон -->
@@ -1203,13 +1247,16 @@
   { const back = document.getElementById('sceneParamsWin'); back.onclick = (e) => { if (e.target === back) back.classList.remove('show'); }; }
   document.getElementById('spellsSearch').oninput = () => fillSpells();
 
-  // бестиарий: вкладки / поиск / закрытие
+  // бестиарий: переключатель disposition / поиск / закрытие + окно деталей
   { const back = document.getElementById('bestiaryWin');
     document.getElementById('bestiaryX').onclick = () => closeBestiary();
     back.onclick = (e) => { if (e.target === back) closeBestiary(); };
-    document.getElementById('bestiarySearch').oninput = () => renderBestiary();
-    document.querySelectorAll('#bestiaryWin .codex-tab').forEach(t =>
-      t.onclick = () => { bestiaryTab = t.dataset.bestTab; renderBestiary(); }); }
+    document.getElementById('bestiarySearch').oninput = (e) => { bestiarySearchText = e.target.value; renderBestiary(); };
+    document.querySelectorAll('#bestiaryWin .codex-tab[data-best-disp]').forEach(t =>
+      t.onclick = () => { bestiaryDisp = t.dataset.bestDisp; bestiaryCat = null; renderBestiary(); });
+    const cwin = document.getElementById('creatureWin');
+    document.getElementById('creatureX').onclick = () => cwin.classList.remove('show');
+    cwin.onclick = (e) => { if (e.target === cwin) cwin.classList.remove('show'); }; }
 
   // Книга способностей: полный список действий (строки) с поиском; клик = бросок.
   function fillSpells() {
@@ -1762,61 +1809,127 @@
   // работающий npc.create. Вкладка/поиск — чисто UI (НЕ store, как codex);
   // токен появится через token.added (handler уже есть). store не мутируем.
   // ===================================================================
-  let bestiaryTab = 'monster';
+  // UI-состояние бестиария (НЕ store): верхний фильтр disposition, выбранная
+  // категория (null = «Все»), текст поиска. store сюда не пишем.
+  let bestiaryDisp = 'monster';        // 'monster' | 'neutral' | 'characters'
+  let bestiaryCat = null;              // выбранная категория или null (Все)
+  let bestiarySearchText = '';
+  const DISP_EMOJI = { monster: '👹', neutral: '🧑', ally: '🛡' };
+
   function openBestiary() { renderBestiary(); document.getElementById('bestiaryWin').classList.add('show'); }
   function closeBestiary() { document.getElementById('bestiaryWin').classList.remove('show'); }
 
-  function statblockFromCreature(c) {
-    return { name: c.name, npc: true, type: c.type || '', ac: c.ac,
-             hp: c.hp ? { current: c.hp.current ?? c.hp.max, max: c.hp.max } : { current: 1, max: 1 },
-             abilities: c.abilities || {}, actions: c.actions || [] };
-  }
   // флаг «я инициировал постановку» — чтобы автофокус сработал только на МОЁМ
   // token.added, а не на чужих (сервер не различает автора). Один GM — достаточно.
   let pendingFocus = false;
-  function placeCreature(c) {
+
+  // постановка существа на сцену через РАБОТАЮЩИЙ npc.create. level — на будущее
+  // (промпт 5: слайдер уровня и масштабирование); сейчас всегда 1.
+  function placeCreature(c, level) {
+    const statblock = {
+      name: c.name, npc: true, type: c.type || '', ac: c.ac,
+      hp: c.hp ? { current: c.hp.current ?? c.hp.max, max: c.hp.max } : { current: 1, max: 1 },
+      abilities: c.abilities || {}, actions: c.actions || [], disposition: c.disposition,
+    };
     pendingFocus = true;
-    net.send({ type: 'npc.create', x: 8, y: 8, count: 1, statblock: statblockFromCreature(c) });
+    net.send({ type: 'npc.create', x: 8, y: 8, count: 1, level: level || 1, statblock });
+    document.getElementById('creatureWin').classList.remove('show');
     closeBestiary();
   }
-  async function placeCharacter(charId) {
+
+  // персонаж из лобби: тянем ПОЛНЫЙ объект (нужны derived ac/hp), ставим как союзника
+  async function openCharacterPlace(charId) {
     try {
       const ch = await (await fetch(`/api/games/${encodeURIComponent(net.room)}/characters/${charId}`)).json();
       const d = ch.derived || {};
       const sb = { name: ch.name, npc: true, type: (ch.meta && ch.meta.class) || '',
-                   ac: d.ac, hp: d.hp ? { current: d.hp.current ?? d.hp.max, max: d.hp.max } : { current: 1, max: 1 },
-                   abilities: ch.abilities || {}, actions: ch.actions || [] };
+                   ac: d.ac ?? ch.ac,
+                   hp: d.hp ? { current: d.hp.current ?? d.hp.max, max: d.hp.max } : (ch.hp || { current: 1, max: 1 }),
+                   abilities: ch.abilities || {}, actions: ch.actions || [], disposition: 'ally' };
       pendingFocus = true;
       net.send({ type: 'npc.create', x: 8, y: 8, count: 1, statblock: sb });
     } catch (e) { /* тихо: персонаж недоступен */ }
     closeBestiary();
   }
 
+  // детальный вид существа: портрет + описание + статблок (sheetHtml) + «Разместить».
+  // Вход в промпт 5 — там сюда добавится слайдер уровня.
+  function openCreatureDetail(c) {
+    const body = document.getElementById('creatureBody');
+    const title = document.getElementById('creatureWinTitle');
+    if (title) title.textContent = `${DISP_EMOJI[c.disposition] || '👹'} ${c.name || 'Существо'}`;
+    const portrait = c.image ? `<img src="${c.image}" alt="">` : (DISP_EMOJI[c.disposition] || '👹');
+    body.innerHTML =
+      `<div class="creature-hero">` +
+        `<div class="creature-portrait">${portrait}</div>` +
+        `<div style="flex:1;min-width:0;">` +
+          (c.category ? `<div class="bestiary-cat">${esc(c.category)}</div>` : '') +
+          (c.description ? `<div class="sheet-row">${esc(c.description)}</div>` : '') +
+        `</div>` +
+      `</div>` +
+      sheetHtml(Object.assign({ npc: true }, c)) +
+      `<button class="creature-place-btn" id="creaturePlaceBtn">Разместить на сцене</button>`;
+    body.querySelector('#creaturePlaceBtn').onclick = () => placeCreature(c, 1);
+    document.getElementById('creatureWin').classList.add('show');
+  }
+
+  function bestiaryCardHtml(thumb, name, meta, cat) {
+    return `<div class="bestiary-thumb">${thumb}</div>` +
+      `<div class="bestiary-name">${esc(name)}</div>` +
+      `<div class="bestiary-meta">${meta}</div>` +
+      (cat ? `<div class="bestiary-cat">${esc(cat)}</div>` : '');
+  }
+
   function renderBestiary() {
+    const win = document.getElementById('bestiaryWin');
+    if (!win) return;
+    // верхний переключатель disposition
+    win.querySelectorAll('.codex-tab[data-best-disp]').forEach(t =>
+      t.classList.toggle('active', t.dataset.bestDisp === bestiaryDisp));
+    const cats = document.getElementById('bestiaryCats');
     const list = document.getElementById('bestiaryList');
-    if (!list) return;
-    document.querySelectorAll('#bestiaryWin .codex-tab').forEach(t => t.classList.toggle('active', t.dataset.bestTab === bestiaryTab));
-    const q = (document.getElementById('bestiarySearch').value || '').trim().toLowerCase();
-    list.innerHTML = '';
-    if (bestiaryTab === 'characters') {
+    const q = (bestiarySearchText || '').trim().toLowerCase();
+    cats.innerHTML = ''; list.innerHTML = '';
+
+    // --- Персонажи: категорий нет, карточки из store.roster ---
+    if (bestiaryDisp === 'characters') {
       const chars = Object.values(store.roster || {}).filter(c => !q || (c.name || '').toLowerCase().includes(q));
       if (!chars.length) { list.innerHTML = '<div class="codex-empty">Нет персонажей</div>'; return; }
       for (const c of chars) {
-        const row = document.createElement('div'); row.className = 'spell-row';
-        row.innerHTML = `<div class="spell-main"><div class="spell-name">${esc(c.name)}</div><div class="spell-sub">${esc(c.class || '')}${c.level ? ' ' + c.level + ' ур.' : ''}</div></div>`;
-        row.onclick = () => placeCharacter(c.charId);
-        list.appendChild(row);
+        const card = document.createElement('div'); card.className = 'bestiary-card';
+        const meta = `${esc(c.class || '')}${c.level ? ' · ' + c.level + ' ур.' : ''}`.trim() || '—';
+        card.innerHTML = bestiaryCardHtml('🧝', c.name, meta, null);
+        card.onclick = () => openCharacterPlace(c.charId);
+        list.appendChild(card);
       }
       return;
     }
-    const creatures = (store.catalog.creatures || []).filter(c => c.disposition === bestiaryTab && (!q || (c.name || '').toLowerCase().includes(q)));
-    if (!creatures.length) { list.innerHTML = '<div class="codex-empty">Пусто</div>'; return; }
-    for (const c of creatures) {
-      const row = document.createElement('div'); row.className = 'spell-row';
-      const hp = c.hp ? c.hp.max : '—';
-      row.innerHTML = `<div class="spell-main"><div class="spell-name">${esc(c.name)}</div><div class="spell-sub">HP ${hp}, AC ${c.ac ?? '—'}${c.type ? ' · ' + esc(c.type) : ''}</div></div>`;
-      row.onclick = () => placeCreature(c);
-      list.appendChild(row);
+
+    // --- Монстры/Нейтралы: фильтр по disposition, динамические категории ---
+    const pool = (store.bestiary || []).filter(c => c.disposition === bestiaryDisp);
+    const allCats = [...new Set(pool.map(c => c.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
+    if (bestiaryCat && !allCats.includes(bestiaryCat)) bestiaryCat = null;   // категория исчезла
+    const mkCat = (label, val) => {
+      const el = document.createElement('div');
+      el.className = 'best-cat' + (bestiaryCat === val ? ' active' : '');
+      el.textContent = label;
+      el.onclick = () => { bestiaryCat = val; renderBestiary(); };
+      return el;
+    };
+    cats.appendChild(mkCat('Все', null));
+    allCats.forEach(cat => cats.appendChild(mkCat(cat, cat)));
+
+    const shown = pool.filter(c =>
+      (!bestiaryCat || c.category === bestiaryCat) &&
+      (!q || (c.name || '').toLowerCase().includes(q)));
+    if (!shown.length) { list.innerHTML = '<div class="codex-empty">Пусто</div>'; return; }
+    for (const c of shown) {
+      const card = document.createElement('div'); card.className = 'bestiary-card';
+      const hp = c.hp ? (c.hp.max ?? '—') : '—';
+      const thumb = c.image ? `<img src="${c.image}" alt="">` : (DISP_EMOJI[c.disposition] || '❓');
+      card.innerHTML = bestiaryCardHtml(thumb, c.name, `HP ${hp} · AC ${c.ac ?? '—'}`, c.category);
+      card.onclick = () => openCreatureDetail(c);
+      list.appendChild(card);
     }
   }
 
