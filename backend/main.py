@@ -206,6 +206,23 @@ def require_gm(member: "Member | None") -> bool:
     return bool(member) and member.role == "gm"
 
 
+def merged_creatures(room_id: str) -> list[dict]:
+    """Единый список бестиария: базовые существа из каталога (SRD) как основа,
+    поверх — homebrew из БД по id (homebrew перекрывает srd). source проставлен:
+    'SRD' для каталожных, 'HB' для пользовательских (db гарантирует source='HB').
+    Пока никуда не подключён — доступен как сборщик для бестиария."""
+    merged: dict[str, dict] = {}
+    for rec in content_catalog.creatures.values():
+        c = dict(rec)
+        c.setdefault("source", "SRD")
+        merged[c.get("id")] = c
+    for hb in db.list_creatures(room_id):
+        c = dict(hb)
+        c["source"] = "HB"
+        merged[c.get("id")] = c
+    return list(merged.values())
+
+
 rooms: dict[str, Room] = {}
 
 
