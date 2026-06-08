@@ -192,42 +192,102 @@
   .log-total { color: var(--gold-bright); font-weight: 700; }
   .log-empty { color: var(--ink-dim); font-style: italic; font-size: 12px; }
 
-  /* ---------- HOTBAR ---------- */
-  /* оверлей поверх карты снизу по центру; ширина — по контенту (без пустой зоны справа) */
+  /* ---------- HOTBAR (фикс. бар: орб | сетка действий | ресурсы) ---------- */
   .hotbar { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 10;
-    width: max-content; max-width: calc(100% - 24px);
-    display: flex; flex-direction: column; gap: 0;
+    max-width: calc(100% - 24px);
+    display: flex; flex-direction: column;
     background: linear-gradient(180deg, rgba(31,26,19,.94), rgba(23,19,13,.94)); border: 1px solid var(--edge-bright);
     border-radius: 6px; box-shadow: 0 4px 24px rgba(0,0,0,.7); overflow: hidden; }
   .hb-tabs { display: flex; border-bottom: 1px solid var(--edge); }
   .hb-tab { padding: 7px 16px; font-family: 'Cinzel'; font-size: 11px; letter-spacing: .05em;
     color: var(--ink-dim); cursor: pointer; border-right: 1px solid var(--edge); transition: all .15s; }
-  .hb-tab:hover { color: var(--ink); }
-  .hb-tab.active { color: var(--gold-bright); background: rgba(201,162,83,.1); }
-  .hb-body { display: flex; align-items: stretch; gap: 12px; padding: 10px 14px; }
-  .hp-orb { width: 70px; height: 70px; border-radius: 50%; flex-shrink: 0;
+  .hb-tab:hover { color: var(--gold-bright); background: rgba(201,162,83,.08); }
+
+  /* тело ФИКСИРОВАННОЙ высоты — не зависит от числа действий */
+  .hb-body { display: flex; align-items: center; gap: 14px; padding: 10px 14px; height: 108px; }
+
+  /* орб хитов слева, крупный */
+  .hp-orb { position: relative; width: 84px; height: 84px; border-radius: 50%; flex-shrink: 0;
     background: radial-gradient(circle at 35% 30%, #b03828, #5a160e 70%, #2a0a06);
     border: 2px solid var(--gold); display: flex; flex-direction: column; align-items: center;
     justify-content: center; box-shadow: 0 0 16px rgba(138,46,34,.4), inset 0 -8px 14px rgba(0,0,0,.5); }
-  .hp-orb .hp-val { font-family: 'Cinzel'; font-weight: 700; font-size: 17px; color: #fff; }
-  .hp-orb .hp-max { font-size: 10px; color: #e8c0b0; }
-  .hb-content { flex: 1; display: flex; align-items: center; }
-  .action-icons { display: flex; gap: 7px; flex-wrap: wrap; }
-  .act { width: 44px; height: 44px; border-radius: 5px;
+  .hp-orb .hp-val { font-family: 'Cinzel'; font-weight: 700; font-size: 22px; color: #fff; line-height: 1; }
+  .hp-orb .hp-max { font-size: 11px; color: #e8c0b0; }
+  .hp-temp { position: absolute; top: -4px; right: -4px; background: #2f6a8a; color: #fff; border: 1px solid var(--gold);
+    border-radius: 9px; font-family: 'Cinzel'; font-size: 10px; padding: 1px 6px; box-shadow: 0 2px 6px rgba(0,0,0,.6); }
+
+  /* центр: пагинируемая сетка действий (2 ряда фикс. высоты, колонки вправо) */
+  .hb-center { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .act-pager { display: flex; align-items: center; gap: 8px; }
+  .pager-btn { width: 22px; height: 64px; background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--edge-bright); border-radius: 4px; color: var(--gold-bright); font-family: 'Cinzel';
+    font-size: 16px; cursor: pointer; flex-shrink: 0; }
+  .pager-btn:hover:not(:disabled) { border-color: var(--gold); }
+  .pager-btn:disabled { opacity: .3; cursor: default; }
+  .act-grid { display: grid; grid-template-rows: repeat(2, 40px); grid-auto-flow: column; grid-auto-columns: 40px;
+    gap: 6px; height: 86px; align-content: center; }
+  .act { position: relative; width: 40px; height: 40px; border-radius: 5px;
     background: linear-gradient(160deg, var(--panel-2), #181309); border: 1px solid var(--edge-bright);
-    display: flex; align-items: center; justify-content: center; font-size: 19px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer;
     transition: transform .12s, border-color .12s, box-shadow .12s; }
-  .act:hover { transform: translateY(-3px); border-color: var(--gold); box-shadow: 0 4px 12px rgba(201,162,83,.3); }
-  .hb-text { color: var(--ink-dim); font-size: 13px; display: flex; gap: 28px; flex-wrap: wrap; }
-  .hb-text b { color: var(--ink); font-family: 'Cinzel'; font-weight: 600; }
-  .slots { flex-shrink: 0; display: flex; flex-direction: column; gap: 5px; padding-left: 12px;
-    border-left: 1px solid var(--edge); justify-content: center; }
-  .slots-label { font-family: 'Cinzel'; font-size: 9px; letter-spacing: .1em; color: var(--ink-dim); text-transform: uppercase; }
+  .act:hover { transform: translateY(-2px); border-color: var(--gold); box-shadow: 0 4px 12px rgba(201,162,83,.3); }
+  .act-lvl { position: absolute; bottom: -2px; right: -2px; background: #241c12; color: var(--gold-bright);
+    border: 1px solid var(--edge-bright); border-radius: 50%; width: 14px; height: 14px; font-size: 9px;
+    font-family: 'Cinzel'; display: flex; align-items: center; justify-content: center; }
+  .act-empty { color: var(--ink-dim); font-style: italic; font-size: 12px; align-self: center; white-space: nowrap; }
+  .act-dots { display: flex; gap: 5px; height: 8px; align-items: center; }
+  .act-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--edge-bright); cursor: pointer; }
+  .act-dot.active { background: var(--gold-bright); }
+
+  /* правая панель ресурсов (из store.character.resources, не хардкод) */
+  .hb-res { align-self: stretch; display: flex; gap: 16px; padding-left: 14px; border-left: 1px solid var(--edge);
+    align-items: center; max-width: 320px; overflow-x: auto; }
+  .res-col { display: flex; flex-direction: column; gap: 5px; justify-content: center; }
+  .res-label { font-family: 'Cinzel'; font-size: 9px; letter-spacing: .1em; color: var(--ink-dim); text-transform: uppercase; }
   .slot-row { display: flex; gap: 5px; align-items: center; }
   .slot-lvl { font-size: 10px; color: var(--ink-dim); width: 12px; font-family: 'Cinzel'; }
   .pip { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--edge-bright);
     background: radial-gradient(circle at 35% 30%, var(--gold-bright), #6a4a18); cursor: pointer; }
   .pip.spent { background: #1a150d; box-shadow: inset 0 0 4px #000; }
+  .insp { font-size: 18px; cursor: default; }
+  .insp.off { filter: grayscale(1); opacity: .4; }
+  .res-custom { font-size: 12px; color: var(--ink-dim); white-space: nowrap; }
+  .res-custom b { color: var(--ink); font-family: 'Cinzel'; font-weight: 600; }
+
+  /* окна-оверлеи бара (книга / инвентарь / персонаж) */
+  .win-back { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center;
+    justify-content: center; z-index: 120; padding: 24px; }
+  .win-back.show { display: flex; }
+  .win { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--gold);
+    border-radius: 9px; width: 100%; max-width: 560px; max-height: 80vh; display: flex; flex-direction: column;
+    box-shadow: 0 14px 44px rgba(0,0,0,.8); overflow: hidden; }
+  .win-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--edge); }
+  .win-head h3 { font-family: 'Cinzel'; color: var(--gold-bright); font-size: 15px; flex-shrink: 0; }
+  .win-search { flex: 1; background: var(--bg); border: 1px solid var(--edge-bright); border-radius: 5px;
+    color: var(--ink); font-family: 'Spectral'; font-size: 13px; padding: 6px 10px; }
+  .win-search:focus { outline: none; border-color: var(--gold); }
+  .win-x { background: transparent; border: none; color: var(--ink-dim); font-size: 18px; cursor: pointer; flex-shrink: 0; }
+  .win-x:hover { color: #d98a7a; }
+  .win-body { padding: 12px 16px; overflow-y: auto; }
+
+  /* строки книги способностей */
+  .spell-row { display: flex; align-items: center; gap: 10px; padding: 8px; border-bottom: 1px solid var(--edge); cursor: pointer; }
+  .spell-row:hover { background: #241c14; }
+  .spell-lvl { width: 26px; height: 26px; flex-shrink: 0; border-radius: 50%; border: 1px solid var(--edge-bright);
+    background: radial-gradient(circle at 35% 30%, var(--gold-bright), #6a4a18); color: #1a140a; font-family: 'Cinzel';
+    font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+  .spell-main { flex: 1; min-width: 0; }
+  .spell-name { font-size: 14px; color: var(--ink); }
+  .spell-sub { font-size: 11px; color: var(--ink-dim); }
+  .spell-mod { font-family: 'Cinzel'; color: var(--gold-bright); font-weight: 700; flex-shrink: 0; }
+
+  /* сетка инвентаря */
+  .inv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
+  .inv-slot { background: linear-gradient(160deg, var(--panel-2), #181309); border: 1px solid var(--edge-bright);
+    border-radius: 6px; padding: 10px 8px; text-align: center; position: relative; }
+  .inv-icon { font-size: 24px; }
+  .inv-name { font-size: 11px; color: var(--ink); margin-top: 5px; }
+  .inv-qty { position: absolute; bottom: 4px; right: 6px; font-size: 10px; color: var(--gold-bright); font-family: 'Cinzel'; }
 
   /* GM modal for incoming request */
   .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none;
@@ -362,22 +422,25 @@
       <div class="codex-right codex-detail" id="codexDetail"></div>
     </div>
 
-    <!-- HOTBAR (оверлей снизу по центру, поверх карты — как в BG3) -->
+    <!-- HOTBAR (фикс. высота: орб | сетка действий с пагинацией | ресурсы) -->
     <div class="hotbar">
       <div class="hb-tabs">
-        <div class="hb-tab active" data-hb="abilities">Способности</div>
-        <div class="hb-tab" data-hb="char">Персонаж</div>
-        <div class="hb-tab" data-hb="inv">Инвентарь</div>
+        <div class="hb-tab" id="tabSpells">📖 Книга способностей</div>
+        <div class="hb-tab" id="tabInv">🎒 Инвентарь</div>
+        <div class="hb-tab" id="tabChar">📜 Персонаж</div>
       </div>
       <div class="hb-body">
-        <!-- всё ниже наполняется renderHotbar() из store.character -->
+        <!-- наполняется renderHotbar()/renderActions()/renderResources() из store.character -->
         <div class="hp-orb" id="hpOrb"><div class="hp-val">—</div><div class="hp-max"></div></div>
-        <div class="hb-content">
-          <div class="action-icons" id="hb-abilities"></div>
-          <div class="hb-text" id="hb-char" style="display:none"></div>
-          <div class="hb-text" id="hb-inv" style="display:none"></div>
+        <div class="hb-center">
+          <div class="act-pager">
+            <button class="pager-btn" id="actPrev" title="Назад">‹</button>
+            <div class="act-grid" id="actGrid"></div>
+            <button class="pager-btn" id="actNext" title="Вперёд">›</button>
+          </div>
+          <div class="act-dots" id="actDots"></div>
         </div>
-        <div class="slots" id="hbSlots"></div>
+        <div class="hb-res" id="hbRes"></div>
       </div>
     </div>
   </div>
@@ -415,6 +478,36 @@
       <button class="btn-ghost" id="modalCancel">Отмена</button>
       <button class="btn-primary" id="modalOpen">Открыть приватный канал</button>
     </div>
+  </div>
+</div>
+
+<!-- Окна бара: книга способностей / инвентарь / персонаж (независимы от модалки GM) -->
+<div class="win-back" id="spellsWin">
+  <div class="win">
+    <div class="win-head">
+      <h3>📖 Книга способностей</h3>
+      <input class="win-search" id="spellsSearch" type="text" placeholder="Поиск…" autocomplete="off">
+      <button class="win-x" id="spellsX">✕</button>
+    </div>
+    <div class="win-body" id="spellsBody"></div>
+  </div>
+</div>
+<div class="win-back" id="invWin">
+  <div class="win">
+    <div class="win-head">
+      <h3>🎒 Инвентарь</h3>
+      <button class="win-x" id="invX">✕</button>
+    </div>
+    <div class="win-body" id="invBody"></div>
+  </div>
+</div>
+<div class="win-back" id="charWin">
+  <div class="win">
+    <div class="win-head">
+      <h3>📜 Персонаж</h3>
+      <button class="win-x" id="charX">✕</button>
+    </div>
+    <div class="win-body" id="charBody"></div>
   </div>
 </div>
 
@@ -809,18 +902,89 @@
     location.href = 'lobby.html' + (net.room ? ('?room=' + encodeURIComponent(net.room)) : '');
   };
 
-  // hotbar tabs
-  const hbViews = { abilities: 'action-icons', char: 'hb-text', inv: 'hb-text' };
-  document.querySelectorAll('.hb-tab').forEach(tab => {
-    tab.onclick = () => {
-      document.querySelectorAll('.hb-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      ['abilities','char','inv'].forEach(k => {
-        document.getElementById('hb-' + k).style.display = (k === tab.dataset.hb) ?
-          (k === 'abilities' ? 'flex' : 'flex') : 'none';
-      });
-    };
-  });
+  // пагинация сетки действий
+  document.getElementById('actPrev').onclick = () => { actPage--; renderActions(); };
+  document.getElementById('actNext').onclick = () => { actPage++; renderActions(); };
+
+  // вкладки бара ОТКРЫВАЮТ ОКНА (не переключают контент)
+  function openWin(id, fill) { if (fill) fill(); document.getElementById(id).classList.add('show'); }
+  function closeWin(id) { document.getElementById(id).classList.remove('show'); }
+  document.getElementById('tabSpells').onclick = () => openWin('spellsWin', fillSpells);
+  document.getElementById('tabInv').onclick = () => openWin('invWin', fillInv);
+  document.getElementById('tabChar').onclick = () => openWin('charWin', fillChar);
+  for (const k of ['spells', 'inv', 'char']) {
+    const back = document.getElementById(k + 'Win');
+    document.getElementById(k + 'X').onclick = () => closeWin(k + 'Win');
+    back.onclick = (e) => { if (e.target === back) closeWin(k + 'Win'); };   // клик по фону закрывает
+  }
+  document.getElementById('spellsSearch').oninput = () => fillSpells();
+
+  // Книга способностей: полный список действий (строки) с поиском; клик = бросок.
+  function fillSpells() {
+    const body = document.getElementById('spellsBody');
+    if (!body) return;
+    const actions = (store.character && store.character.actions) || [];
+    const q = (document.getElementById('spellsSearch').value || '').trim().toLowerCase();
+    const list = actions.filter(a => !q || ((a.nameLocal || '') + ' ' + (a.name || '')).toLowerCase().includes(q));
+    body.innerHTML = '';
+    if (!list.length) { body.innerHTML = '<div class="codex-empty">Ничего не найдено</div>'; return; }
+    for (const act of list) {
+      const roll = actionPrimaryRoll(act);
+      const row = document.createElement('div'); row.className = 'spell-row';
+      const lvl = document.createElement('div'); lvl.className = 'spell-lvl';
+      lvl.textContent = (act.kind === 'spell' && act.level != null) ? act.level : actionIcon(act);
+      const main = document.createElement('div'); main.className = 'spell-main';
+      main.innerHTML = `<div class="spell-name">${esc(act.nameLocal || act.name || 'Действие')}</div><div class="spell-sub">${esc(actionSub(act))}</div>`;
+      const mod = document.createElement('div'); mod.className = 'spell-mod';
+      mod.textContent = roll ? `${roll.notation}${roll.modifier ? sign(roll.modifier) : ''}` : '';
+      row.appendChild(lvl); row.appendChild(main); row.appendChild(mod);
+      row.onclick = () => rollAction(act);
+      body.appendChild(row);
+    }
+  }
+
+  // Инвентарь: структура ещё дозреет в схеме — берём character.inventory[],
+  // иначе действия с kind==='item'.
+  function fillInv() {
+    const body = document.getElementById('invBody');
+    if (!body) return;
+    const c = store.character || {};
+    let items = Array.isArray(c.inventory) ? c.inventory : [];
+    if (!items.length) items = (c.actions || []).filter(a => a.kind === 'item');
+    body.innerHTML = '';
+    if (!items.length) {
+      body.innerHTML = '<div class="codex-empty">Инвентарь пуст</div>'
+        + '<div style="color:var(--ink-dim);font-style:italic;font-size:12px;margin-top:8px;">Структура инвентаря дозреет в схеме персонажа.</div>';
+      return;
+    }
+    const grid = document.createElement('div'); grid.className = 'inv-grid';
+    for (const it of items) {
+      const slot = document.createElement('div'); slot.className = 'inv-slot';
+      const icon = (it.icon && /\p{Emoji}/u.test(it.icon)) ? it.icon : '🎒';
+      slot.innerHTML = `<div class="inv-icon">${icon}</div><div class="inv-name">${esc(it.nameLocal || it.name || 'Предмет')}</div>`
+        + (it.qty ? `<div class="inv-qty">×${it.qty}</div>` : '');
+      grid.appendChild(slot);
+    }
+    body.appendChild(grid);
+  }
+
+  // Персонаж: компактная выжимка
+  function fillChar() {
+    const body = document.getElementById('charBody');
+    if (!body) return;
+    const c = store.character;
+    if (!c) { body.innerHTML = '<div class="codex-empty">Нет персонажа</div>'; return; }
+    const d = c.derived || {}, a = c.abilities || {}, hp = d.hp || {}, m = c.meta || {};
+    let abil = '';
+    for (const k of ['str', 'dex', 'con', 'int', 'wis', 'cha'])
+      if (a[k] != null) abil += `<span style="margin-right:16px;"><b>${ABIL_RU[k]}</b> ${a[k]} (${sign(abilMod(a[k]))})</span>`;
+    body.innerHTML =
+      `<div style="font-size:16px;color:var(--gold-bright);font-family:Cinzel;margin-bottom:10px;">${esc(c.name || '—')}${m.class ? ' · ' + esc(m.class) : ''}${m.level ? ' ' + m.level + ' ур.' : ''}</div>` +
+      `<div style="color:var(--ink-dim);margin-bottom:10px;">${abil}</div>` +
+      `<div class="sheet-row"><span><b>КД:</b> ${d.ac ?? '—'}</span><span><b>Хиты:</b> ${hp.current ?? '—'}/${hp.max ?? '—'}</span>` +
+      `<span><b>Скорость:</b> ${d.speed ?? '—'} фт</span><span><b>Иниц:</b> ${d.initiative != null ? sign(d.initiative) : '—'}</span>` +
+      `<span><b>Бонус:</b> ${c.proficiencyBonus != null ? sign(c.proficiencyBonus) : '—'}</span></div>`;
+  }
 
   // requests -> GM modal
   const modalBack = document.getElementById('modalBack');
@@ -889,76 +1053,128 @@
     return '🎲';
   }
 
+  // КЛИК по действию (иконка в баре ИЛИ строка в книге) — один путь броска
+  function rollAction(act) {
+    const roll = actionPrimaryRoll(act);
+    if (!roll || !roll.notation) return;            // действие без броска (напр. Щит)
+    const name = act.nameLocal || act.name || 'Действие';
+    net.send({
+      type: 'dice.roll',
+      notation: roll.notation,
+      modifier: roll.modifier || 0,
+      label: name + (roll.label ? ' · ' + roll.label : ''),
+    });
+  }
+  function actionSub(act) {
+    if (act.kind === 'spell') {
+      const lvl = act.level === 0 ? 'заговор' : (act.level != null ? act.level + ' круг' : '');
+      return [act.schoolLocal || act.school || '', lvl].filter(Boolean).join(' · ');
+    }
+    return (act.rolls || []).map(r => r.label).filter(Boolean).join(', ');
+  }
+
+  // хотбар = представление «Персонаж» (боевая выжимка), целиком из store.character
   function renderHotbar() {
     const c = store.character;
-
     const orb = document.getElementById('hpOrb');
     if (orb) {
       const hp = (c && c.derived && c.derived.hp) || {};
-      orb.innerHTML = `<div class="hp-val">${hp.current ?? '—'}</div><div class="hp-max">${hp.max != null ? '/ ' + hp.max : ''}</div>`;
+      let html = `<div class="hp-val">${hp.current ?? '—'}</div><div class="hp-max">${hp.max != null ? '/ ' + hp.max : ''}</div>`;
+      if (hp.temp > 0) html += `<div class="hp-temp" title="Временные хиты">+${hp.temp}</div>`;
+      orb.innerHTML = html;
+    }
+    renderActions();
+    renderResources();
+  }
+
+  // сетка действий с пагинацией. actPage — ЛОКАЛЬНЫЙ вид (не store). Бар не меняет
+  // высоту: при переполнении — листание; полный список — в окне «Книга способностей».
+  let actPage = 0;
+  const ACT_PAGE_SIZE = 12;   // 2 ряда × 6 колонок
+  function renderActions() {
+    const grid = document.getElementById('actGrid');
+    if (!grid) return;
+    const actions = (store.character && store.character.actions) || [];
+    const pages = Math.max(1, Math.ceil(actions.length / ACT_PAGE_SIZE));
+    if (actPage >= pages) actPage = pages - 1;
+    if (actPage < 0) actPage = 0;
+
+    grid.innerHTML = '';
+    if (!actions.length) grid.innerHTML = '<div class="act-empty">Нет действий</div>';
+    for (const act of actions.slice(actPage * ACT_PAGE_SIZE, actPage * ACT_PAGE_SIZE + ACT_PAGE_SIZE)) {
+      const name = act.nameLocal || act.name || 'Действие';
+      const roll = actionPrimaryRoll(act);
+      const div = document.createElement('div');
+      div.className = 'act';
+      div.title = roll ? `${name} (${roll.notation}${roll.modifier ? sign(roll.modifier) : ''})` : name;
+      div.textContent = actionIcon(act);
+      if (act.kind === 'spell' && act.level != null) {            // цифра круга в углу
+        const b = document.createElement('span'); b.className = 'act-lvl'; b.textContent = act.level;
+        div.appendChild(b);
+      }
+      div.onclick = () => rollAction(act);
+      grid.appendChild(div);
     }
 
-    const icons = document.getElementById('hb-abilities');
-    if (icons) {
-      icons.innerHTML = '';
-      const actions = (c && c.actions) || [];
-      if (!actions.length) {
-        icons.innerHTML = '<span style="color:var(--ink-dim);font-style:italic;font-size:12px;">Нет действий</span>';
-      }
-      for (const act of actions) {
-        const name = act.nameLocal || act.name || 'Действие';
-        const roll = actionPrimaryRoll(act);
-        const div = document.createElement('div');
-        div.className = 'act';
-        div.title = roll ? `${name} (${roll.notation}${roll.modifier ? sign(roll.modifier) : ''})` : name;
-        div.textContent = actionIcon(act);
-        // КЛИК шлёт dice.roll с реальными notation/modifier действия (не '1d20')
-        div.onclick = () => {
-          if (!roll || !roll.notation) return;          // действие без броска (напр. Щит)
-          net.send({
-            type: 'dice.roll',
-            notation: roll.notation,
-            modifier: roll.modifier || 0,
-            label: name + (roll.label ? ' · ' + roll.label : ''),
-          });
-        };
-        icons.appendChild(div);
+    const prev = document.getElementById('actPrev'), next = document.getElementById('actNext');
+    if (prev) prev.disabled = actPage <= 0;
+    if (next) next.disabled = actPage >= pages - 1;
+    const dots = document.getElementById('actDots');
+    if (dots) {
+      dots.innerHTML = '';
+      if (pages > 1) for (let i = 0; i < pages; i++) {
+        const d = document.createElement('span');
+        d.className = 'act-dot' + (i === actPage ? ' active' : '');
+        d.onclick = () => { actPage = i; renderActions(); };
+        dots.appendChild(d);
       }
     }
+  }
 
-    const comp = document.getElementById('hb-char');
-    if (comp) {
-      if (!c) { comp.innerHTML = ''; }
-      else {
-        const d = c.derived || {}, a = c.abilities || {};
-        comp.innerHTML =
-          `<span><b>КД</b> ${d.ac ?? '—'}</span>` +
-          `<span><b>Скор</b> ${d.speed ?? '—'}фт</span>` +
-          `<span><b>Иниц</b> ${d.initiative != null ? sign(d.initiative) : '—'}</span>` +
-          (a.int != null ? `<span><b>Инт</b> ${sign(abilMod(a.int))}</span>` : '') +
-          `<span><b>Бонус</b> ${c.proficiencyBonus != null ? sign(c.proficiencyBonus) : '—'}</span>`;
-      }
-    }
+  // правая панель ресурсов: ячейки / вдохновение / кастомные — всё из store.character
+  function renderResources() {
+    const el = document.getElementById('hbRes');
+    if (!el) return;
+    el.innerHTML = '';
+    const c = store.character;
+    if (!c) return;
+    const res = c.resources || {};
 
-    const inv = document.getElementById('hb-inv');
-    if (inv) inv.innerHTML = '<span style="color:var(--ink-dim);font-style:italic;">Инвентарь скоро</span>';
-
-    const slots = document.getElementById('hbSlots');
-    if (slots) {
-      const ss = (c && c.resources && c.resources.spellSlots) || {};
-      const levels = Object.keys(ss).sort();
-      let html = '<div class="slots-label">Ячейки</div>', any = false;
+    const ss = res.spellSlots || {};
+    const levels = Object.keys(ss).filter(l => ss[l] && (ss[l].max || 0) > 0).sort();
+    if (levels.length) {
+      const col = document.createElement('div'); col.className = 'res-col';
+      col.innerHTML = '<div class="res-label">Ячейки</div>';
       for (const lvl of levels) {
-        const slot = ss[lvl]; if (!slot) continue;
-        const max = slot.max || 0, cur = slot.current || 0;
-        if (max <= 0) continue;
-        any = true;
+        const slot = ss[lvl], max = slot.max || 0, cur = slot.current || 0;
         let pips = '';
         for (let i = 0; i < max; i++) pips += `<span class="pip${i >= cur ? ' spent' : ''}"></span>`;
-        html += `<div class="slot-row"><span class="slot-lvl">${lvl}</span>${pips}</div>`;
+        const row = document.createElement('div'); row.className = 'slot-row';
+        row.innerHTML = `<span class="slot-lvl">${lvl}</span>${pips}`;
+        col.appendChild(row);
       }
-      slots.innerHTML = any ? html : '';
-      slots.querySelectorAll('.pip').forEach(p => p.onclick = () => p.classList.toggle('spent'));  // визуальная трата
+      // TODO: расход ячейки — серверной командой; пока pip — визуальный тумблер
+      col.querySelectorAll('.pip').forEach(p => p.onclick = () => p.classList.toggle('spent'));
+      el.appendChild(col);
+    }
+
+    if (c.heroicInspiration != null) {
+      const col = document.createElement('div'); col.className = 'res-col';
+      col.innerHTML = `<div class="res-label">Вдохновение</div><div><span class="insp${c.heroicInspiration ? '' : ' off'}" title="Героическое вдохновение">⭐</span></div>`;
+      el.appendChild(col);
+    }
+
+    const custom = res.custom || [];
+    if (custom.length) {
+      const col = document.createElement('div'); col.className = 'res-col';
+      col.innerHTML = '<div class="res-label">Ресурсы</div>';
+      for (const r of custom) {
+        const row = document.createElement('div'); row.className = 'res-custom';
+        row.innerHTML = `<b>${esc(r.name || '—')}:</b> ${r.current ?? '—'}/${r.max ?? '—'}`;
+        if (r.resetsOn) row.title = 'Восстановление: ' + r.resetsOn;
+        col.appendChild(row);
+      }
+      el.appendChild(col);
     }
   }
 
