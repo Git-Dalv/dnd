@@ -123,6 +123,13 @@
     box-shadow: 0 6px 16px rgba(0,0,0,.7), 0 0 0 3px rgba(201,162,83,.8); }
   .token.down { filter: grayscale(.7) brightness(.6); }
   .token.turn { box-shadow: 0 0 0 3px var(--gold-bright), 0 0 14px rgba(232,200,120,.7); z-index: 20; }
+  /* временная подсветка «найдено в сцене» — яркое золотое кольцо + пульс */
+  .token--found { z-index: 40; animation: tokenFound 1.2s ease-out; }
+  @keyframes tokenFound {
+    0%   { box-shadow: 0 0 0 0 rgba(232,200,120,.95), 0 0 0 4px var(--gold-bright); }
+    70%  { box-shadow: 0 0 0 22px rgba(232,200,120,0), 0 0 0 4px var(--gold-bright); }
+    100% { box-shadow: 0 0 0 22px rgba(232,200,120,0), 0 0 0 4px rgba(232,200,120,0); }
+  }
   /* скрытый токен (виден только мастеру/в dev) — полупрозрачный с пометкой */
   .token.hidden-tok { opacity: .45; }
   .token.hidden-tok::after { content: '🚫'; position: absolute; top: -6px; left: -6px; font-size: 11px; }
@@ -821,7 +828,11 @@
     },
     // новый токен (NPC/расстановка мастером) — появляется у всех
     'token.added': (msg) => {
-      if (msg.token) { store.tokens.push(msg.token); renderTokens(); }
+      if (!msg.token) return;
+      store.tokens.push(msg.token);
+      renderTokens();
+      // автофокус только если ЭТОТ клиент инициировал постановку (pendingFocus)
+      if (pendingFocus) { pendingFocus = false; focusToken(msg.token.id); }
     },
     // токен удалён мастером
     'token.removed': (msg) => {
@@ -1362,6 +1373,8 @@
     let html = sheetHtml(base);
     if ((t.conditions || []).length) html += `<div class="sheet-row"><b>Состояния:</b> ${esc(t.conditions.join(', '))}</div>`;
     if (t.down) html += `<div class="sheet-row" style="color:#d98a7a;"><b>Выбыл</b></div>`;
+    const isGm = store.me && store.me.role === 'gm';
+    if (isGm) html += '<div class="tok-controls"><button class="tok-cond-btn" data-find="1">🔍 Найти в сцене</button></div>';
     if (canEdit) {
       html += '<div class="tok-controls">'
         + [-5, -1, 1, 5].map(d => `<button class="tok-ctl" data-hp="${d}">${d > 0 ? '+' + d : d}</button>`).join('')
@@ -1371,6 +1384,8 @@
         + '</div>';
     }
     body.innerHTML = html;
+    const findBtn = body.querySelector('[data-find]');
+    if (findBtn) findBtn.onclick = () => { document.getElementById('npcWin').classList.remove('show'); focusToken(t.id); };
     if (canEdit) {
       body.querySelectorAll('[data-hp]').forEach(b => b.onclick = () =>
         net.send({ type: 'token.hp', tokenId: t.id, delta: parseInt(b.dataset.hp, 10) }));
@@ -1750,7 +1765,11 @@
              hp: c.hp ? { current: c.hp.current ?? c.hp.max, max: c.hp.max } : { current: 1, max: 1 },
              abilities: c.abilities || {}, actions: c.actions || [] };
   }
+  // флаг «я инициировал постановку» — чтобы автофокус сработал только на МОЁМ
+  // token.added, а не на чужих (сервер не различает автора). Один GM — достаточно.
+  let pendingFocus = false;
   function placeCreature(c) {
+    pendingFocus = true;
     net.send({ type: 'npc.create', x: 8, y: 8, count: 1, statblock: statblockFromCreature(c) });
     closeBestiary();
   }
@@ -1761,6 +1780,7 @@
       const sb = { name: ch.name, npc: true, type: (ch.meta && ch.meta.class) || '',
                    ac: d.ac, hp: d.hp ? { current: d.hp.current ?? d.hp.max, max: d.hp.max } : { current: 1, max: 1 },
                    abilities: ch.abilities || {}, actions: ch.actions || [] };
+      pendingFocus = true;
       net.send({ type: 'npc.create', x: 8, y: 8, count: 1, statblock: sb });
     } catch (e) { /* тихо: персонаж недоступен */ }
     closeBestiary();
@@ -1864,6 +1884,7 @@
   let GRID = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--grid')) || 48;
   let GRID_OFFSET = { x: 0, y: 0 };
   let applyMapView = null;        // ссылка на apply() из IIFE карты (для applyGrid)
+  let focusCell = null;           // (cx,cy) => центрировать локальный вид на клетке
 
   // Туман: тёмные квадраты на СКРЫТЫХ клетках в пределах мира. revealed —
   // открытые клетки (из store.fog). В dev DM видит под туманом приглушённо.
@@ -1943,6 +1964,20 @@
   }
   renderTokens();
   renderFog();   // первичная отрисовка тумана (GRID уже объявлен выше)
+
+  // ---- «Найти в сцене»: фокус камеры + временная подсветка (локально) ----
+  function highlightToken(tokenId) {
+    const el = document.querySelector(`#mapWorld .token[data-id="${tokenId}"]`);
+    if (!el) return;
+    el.classList.add('token--found');
+    setTimeout(() => el.classList.remove('token--found'), 1500);  // временно, не в store
+  }
+  function focusToken(tokenId) {
+    const t = (store.tokens || []).find(x => x.id === tokenId);
+    if (!t || !focusCell) return;
+    focusCell(t.x, t.y);          // двигаем ТОЛЬКО локальный вид
+    highlightToken(tokenId);
+  }
 
   // ---- сцены (S5/SC3): фон-карта (из assets), сетка, туман, мета ----
   function renderMapBg() {
@@ -2165,6 +2200,15 @@
       if (zlvl) zlvl.textContent = Math.round(view.zoom * 100) + '%';
     }
     applyMapView = apply;   // даём applyGrid (S5) перерисовывать вид при смене сетки
+    // фокус локального вида на центре клетки (cx,cy) — НИЧЕГО не шлём на сервер
+    focusCell = (cx, cy) => {
+      const rect = vp.getBoundingClientRect();
+      const wx = cx * GRID + GRID_OFFSET.x + GRID / 2;   // центр клетки в координатах мира
+      const wy = cy * GRID + GRID_OFFSET.y + GRID / 2;
+      view.x = rect.width / 2 - wx * view.zoom;           // чтобы точка мира легла в центр vp
+      view.y = rect.height / 2 - wy * view.zoom;
+      apply();
+    };
     apply();
 
     const clampZoom = (z) => Math.min(MAX, Math.max(MIN, z));
