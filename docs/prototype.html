@@ -136,34 +136,58 @@
   .journal p { color: var(--ink-dim); line-height: 1.7; font-size: 14px; margin-bottom: 12px; }
   .journal p::first-letter { color: var(--gold); font-family: 'Cinzel'; font-size: 18px; }
 
-  /* ---------- RIGHT PARTY ---------- */
-  .party { grid-column: 3 / 4; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 0; }
-  .video-card {
-    background: linear-gradient(180deg, var(--panel-2), var(--panel));
-    border: 1px solid var(--edge); border-radius: 6px; overflow: hidden; box-shadow: 0 2px 6px var(--shadow);
-  }
-  .video-card.dm { border-color: var(--gold); }
-  .vc-head { display: flex; align-items: center; gap: 6px; padding: 6px 9px; font-size: 12px;
-    font-family: 'Cinzel'; letter-spacing: .03em; }
-  .vc-role { font-size: 9px; color: var(--gold); letter-spacing: .1em; text-transform: uppercase; }
-  .vc-conn { width: 7px; height: 7px; border-radius: 50%; background: var(--green);
-    box-shadow: 0 0 5px var(--green); margin-left: auto; }
-  .vc-conn.off { background: #555; box-shadow: none; }
-  /* live video feed (заглушка) */
-  .vc-video { height: 78px; background:
-      repeating-linear-gradient(45deg, #1a2530, #1a2530 6px, #1d2a36 6px, #1d2a36 12px);
-    display: flex; align-items: center; justify-content: center; position: relative; }
-  .vc-video::after { content: '🎥 видео игрока'; font-size: 10px; color: #6a8aa0; font-style: italic; }
-  .vc-portrait-row { display: flex; gap: 8px; padding: 8px; align-items: center;
-    border-top: 1px solid var(--edge); }
-  .vc-portrait { width: 38px; height: 38px; border-radius: 4px; flex-shrink: 0;
-    background: radial-gradient(circle at 40% 35%, #5a3a6a, #261830); border: 1px solid var(--edge-bright); }
-  .vc-portrait.warrior { background: radial-gradient(circle at 40% 35%, #6a4a2a, #2a1c10); }
-  .vc-portrait.ranger { background: radial-gradient(circle at 40% 35%, #2a5a3a, #103018); }
-  .vc-hp { flex: 1; }
-  .vc-hp-bar { height: 5px; border-radius: 3px; background: #2a1410; overflow: hidden; margin-top: 4px; }
-  .vc-hp-fill { height: 100%; background: linear-gradient(90deg, #6a2a1a, var(--blood)); }
-  .vc-hp-num { font-size: 10px; color: var(--ink-dim); }
+  /* ---------- RIGHT PARTY (бар камер) ---------- */
+  .party { grid-column: 3 / 4; display: flex; flex-direction: column; min-height: 0;
+    border: 1px solid var(--edge); border-radius: 8px; padding: 8px; background: rgba(20,16,11,.5); }
+  .party-head { display: flex; align-items: center; gap: 6px; padding: 2px 2px 6px; border-bottom: 1px solid var(--edge); }
+  .party-title { font-family: 'Cinzel'; font-size: 11px; letter-spacing: .08em; color: var(--gold); text-transform: uppercase; }
+  .party.collapsed .party-title { display: none; }
+  .collapse-btn { margin-left: auto; width: 24px; height: 24px; background: var(--panel-2);
+    border: 1px solid var(--edge-bright); border-radius: 5px; color: var(--gold-bright); cursor: pointer;
+    font-size: 13px; display: flex; align-items: center; justify-content: center; }
+  .collapse-btn:hover { border-color: var(--gold); }
+  .party.collapsed .collapse-btn { margin: 0 auto; }
+
+  .cams { flex: 1; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding: 8px 2px 0; min-height: 0; }
+  .cams::-webkit-scrollbar { width: 6px; }
+  .cams::-webkit-scrollbar-thumb { background: var(--edge-bright); border-radius: 3px; }
+
+  /* карточка — квадрат фикс. размера */
+  .cam { flex-shrink: 0; aspect-ratio: 1; border-radius: 7px; overflow: hidden; position: relative;
+    border: 1px solid var(--edge);
+    background: repeating-linear-gradient(45deg, #1a2530, #1a2530 7px, #1d2a36 7px, #1d2a36 14px); }
+  .cam.dm { border-color: var(--gold); }
+  .cam.empty { background: #181309; border-style: dashed; display: flex; align-items: center; justify-content: center; }
+  .cam.empty .empty-label { font-size: 11px; color: var(--ink-dim); font-style: italic; }
+  .cam-name { position: absolute; top: 0; left: 0; right: 0; padding: 5px 8px; font-family: 'Cinzel'; font-size: 11px;
+    background: linear-gradient(180deg, rgba(20,16,11,.92), transparent); display: flex; align-items: center; gap: 5px; z-index: 2; }
+  .cam-name .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin-left: auto; box-shadow: 0 0 5px var(--green); }
+  .cam-name .dot.off { background: var(--ink-dim); box-shadow: none; }
+  .cam-video { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #6a8aa0; font-size: 10px; font-style: italic; }
+  .cam-badges { position: absolute; bottom: 5px; left: 8px; display: flex; gap: 4px; z-index: 2; }
+  .cam-badge { width: 20px; height: 20px; border-radius: 4px; background: rgba(20,16,11,.8); border: 1px solid var(--edge-bright);
+    display: flex; align-items: center; justify-content: center; font-size: 11px; }
+  .cam-badge.muted { color: var(--blood); border-color: var(--blood); }
+
+  /* свёрнутый вид: маленькие квадратики-аватарки только со статус-точкой */
+  .party.collapsed .cam { width: 38px; height: 38px; margin: 0 auto; }
+  .party.collapsed .cam-name { font-size: 0; padding: 0; background: none; }
+  .party.collapsed .cam-name .dot { position: absolute; top: 3px; right: 3px; margin: 0; }
+  .party.collapsed .cam-video, .party.collapsed .cam-badges, .party.collapsed .cam.empty .empty-label { display: none; }
+
+  /* плашка своих медиа (низ) */
+  .self-bar { flex-shrink: 0; display: flex; gap: 5px; padding: 7px 2px 2px; border-top: 1px solid var(--edge); margin-top: 6px; }
+  .self-btn { flex: 1; height: 36px; background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--edge-bright); border-radius: 6px; color: var(--ink); cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-size: 14px; }
+  .self-btn .lbl { font-size: 7px; color: var(--ink-dim); font-family: 'Cinzel'; letter-spacing: .03em; }
+  .self-btn:hover { border-color: var(--gold); }
+  .self-btn.off { border-color: var(--blood); color: var(--blood); }
+  .self-btn.off .lbl { color: var(--blood); }
+  .self-btn.leave:hover { border-color: var(--blood); color: #d98a7a; }
+  .party.collapsed .self-bar { flex-direction: column; }
+  .party.collapsed .self-btn .lbl { display: none; }
 
   /* requests to DM */
   .requests { background: linear-gradient(180deg, var(--panel-2), var(--panel));
@@ -230,6 +254,19 @@
     border: 1px solid var(--edge-bright); border-radius: 50%; width: 14px; height: 14px; font-size: 9px;
     font-family: 'Cinzel'; display: flex; align-items: center; justify-content: center; }
   .slot .kind { position: absolute; top: 1px; left: 2px; font-size: 8px; opacity: .65; }
+
+  /* пульт мастера (role=gm) — на месте бара слотов, та же фикс. высота */
+  .dm-console { display: none; align-items: center; gap: 10px; padding: 12px 16px; height: 108px; }
+  .dm-console.show { display: flex; }
+  .dm-title { font-family: 'Cinzel'; font-size: 11px; letter-spacing: .08em; color: var(--gold-bright);
+    text-transform: uppercase; padding-right: 10px; border-right: 1px solid var(--edge); align-self: stretch;
+    display: flex; align-items: center; max-width: 70px; }
+  .dm-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+    width: 96px; height: 82px; border-radius: 7px; cursor: pointer; font-size: 26px;
+    background: linear-gradient(160deg, var(--panel-2), #181309); border: 1px solid var(--edge-bright); color: var(--ink);
+    transition: transform .12s, border-color .12s, box-shadow .12s; }
+  .dm-btn:hover { border-color: var(--gold); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(201,162,83,.3); }
+  .dm-btn .lbl { font-size: 11px; font-family: 'Cinzel'; color: var(--ink-dim); }
 
   /* правая панель ресурсов (из store.character.resources, не хардкод) */
   .hb-res { align-self: stretch; display: flex; gap: 16px; padding-left: 14px; border-left: 1px solid var(--edge);
@@ -414,26 +451,45 @@
       <div class="codex-right codex-detail" id="codexDetail"></div>
     </div>
 
-    <!-- HOTBAR (фикс. высота: орб | сетка действий с пагинацией | ресурсы) -->
+    <!-- HOTBAR (player) / ПУЛЬТ МАСТЕРА (gm) — ветвление по роли -->
     <div class="hotbar">
-      <div class="hb-tabs">
+      <div class="hb-tabs" id="hbTabs">
         <div class="hb-tab" id="tabSpells">📖 Книга способностей</div>
         <div class="hb-tab" id="tabInv">🎒 Инвентарь</div>
         <div class="hb-tab" id="tabChar">📜 Персонаж</div>
       </div>
-      <div class="hb-body">
-        <!-- наполняется renderHotbar()/renderActions()/renderResources() из store.character -->
+      <div class="hb-body" id="hbBody">
+        <!-- наполняется renderHotbar()/renderSlots()/renderResources() из store.character -->
         <div class="hp-orb" id="hpOrb"><div class="hp-val">—</div><div class="hp-max"></div></div>
         <div class="slot-grid" id="slotGrid"></div>
         <div class="hb-res" id="hbRes"></div>
       </div>
+      <!-- пульт мастера: каркас под этапы 1–4 (кнопки-заглушки, без логики) -->
+      <div class="dm-console" id="dmConsole">
+        <div class="dm-title">Пульт мастера</div>
+        <div class="dm-btn" data-dm="check">🎲<span class="lbl">Проверка</span></div>
+        <div class="dm-btn" data-dm="npc">👹<span class="lbl">NPC</span></div>
+        <div class="dm-btn" data-dm="scene">🗺<span class="lbl">Сцена</span></div>
+        <div class="dm-btn" data-dm="combat">⚔<span class="lbl">Режим боя</span></div>
+      </div>
     </div>
   </div>
 
-  <!-- RIGHT PARTY -->
-  <div class="party">
-    <!-- видеокарточки — renderParty() из store.seats (подписи занятых мест) -->
-    <div id="partyCards" style="display:flex; flex-direction:column; gap:8px;"></div>
+  <!-- RIGHT PARTY (бар камер) -->
+  <div class="party" id="party">
+    <div class="party-head">
+      <span class="party-title">Отряд</span>
+      <button class="collapse-btn" id="partyCollapse" title="Свернуть">⮞</button>
+    </div>
+    <!-- квадратные карточки — renderParty() из store.seats (занятые места) -->
+    <div class="cams" id="cams"></div>
+    <!-- плашка СВОИХ медиа (тумблеры визуальные; реальный WebRTC — TODO) -->
+    <div class="self-bar" id="selfBar">
+      <button class="self-btn" id="selfMic" title="Микрофон">🎤<span class="lbl">Микро</span></button>
+      <button class="self-btn" id="selfCam" title="Камера">🎥<span class="lbl">Камера</span></button>
+      <button class="self-btn" id="selfSpk" title="Звук">🔊<span class="lbl">Звук</span></button>
+      <button class="self-btn leave" id="selfLeave" title="Выйти">🚪<span class="lbl">Выйти</span></button>
+    </div>
 
     <!-- Запросы к DM'у (пункт 7 плана) временно скрыты — логика и модалка
          ниже сохранены, просто без видимой точки входа в правой колонке.
@@ -525,6 +581,7 @@
     character: null,              // мой персонаж (собранный сервером)
     seats: [],                    // состав мест (для подписей видеокарточек)
     roster: {},                   // charId -> { name, ... } для имён в партии
+    me: null,                     // { role, member, char } — кто я (роль ветвит вид)
   };
 
   // ===================================================================
@@ -880,12 +937,13 @@
   // вкладки). Затем возвращаемся в лобби (с room_id этой же игры).
   // TODO: lobby.html пока не использует ?room — позже пусть прыгает к выбору
   //       места именно этой игры (seats.html?room=...).
-  document.getElementById('navExit').onclick = () => {
+  function exitToLobby() {
     try {
       if (net.ws) { net.ws.onclose = null; net.ws.close(); }   // onclose=null — без авто-переподключения
     } catch (e) {}
     location.href = 'lobby.html' + (net.room ? ('?room=' + encodeURIComponent(net.room)) : '');
-  };
+  }
+  document.getElementById('navExit').onclick = exitToLobby;
 
   // вкладки бара ОТКРЫВАЮТ ОКНА (не переключают контент)
   function openWin(id, fill) { if (fill) fill(); document.getElementById(id).classList.add('show'); }
@@ -1233,28 +1291,69 @@
     }
   }
 
+  // бар камер: квадратные карточки из занятых мест (store.seats + ростер имён)
   function renderParty() {
-    const wrap = document.getElementById('partyCards');
+    const wrap = document.getElementById('cams');
     if (!wrap) return;
     wrap.innerHTML = '';
     for (const s of (store.seats || [])) {
+      const occupied = !!s.memberId;
       const card = document.createElement('div');
-      card.className = 'video-card' + (s.seatNo === 0 ? ' dm' : '');
-      let label;
-      if (s.seatNo === 0) label = '⚜ Мастер';
-      else {
-        const ch = s.charId && store.roster[s.charId];
-        label = ch ? ch.name : ('Игрок ' + s.seatNo);
+      if (s.seatNo === 0) {
+        // карточка мастера
+        card.className = 'cam dm' + (occupied ? '' : ' empty');
+        if (!occupied) { card.innerHTML = '<span class="empty-label">место свободно</span>'; wrap.appendChild(card); continue; }
+        card.innerHTML = `<div class="cam-name">✦ Мастер<span class="dot"></span></div><div class="cam-video">видео мастера</div>`;
+        wrap.appendChild(card);
+        continue;
       }
-      const head = document.createElement('div');
-      head.className = 'vc-head';
-      head.innerHTML = `${esc(label)} <span class="vc-conn${s.memberId ? '' : ' off'}"></span>`;
-      const vid = document.createElement('div');
-      vid.className = 'vc-video';
-      card.appendChild(head); card.appendChild(vid);
+      if (!occupied) {
+        card.className = 'cam empty';
+        card.innerHTML = '<span class="empty-label">место свободно</span>';
+        wrap.appendChild(card);
+        continue;
+      }
+      const ch = s.charId && store.roster[s.charId];
+      const label = ch ? ch.name : ('Игрок ' + s.seatNo);
+      const isSelf = s.memberId === net.member;
+      card.className = 'cam';
+      // бейджи статуса медиа — пока статическая заглушка (TODO: из состояния участника)
+      const badges = isSelf ? '' : '<div class="cam-badges"><span class="cam-badge">🎤</span></div>';
+      card.innerHTML = `<div class="cam-name">${esc(label)}<span class="dot"></span></div>`
+        + `<div class="cam-video">${isSelf ? 'вы' : 'видео игрока'}</div>` + badges;
       wrap.appendChild(card);
     }
   }
+
+  // ===================================================================
+  // Роль ветвит ВИД (gm | player). Сервер — источник истины (он различает
+  // is_gm и игнорирует gm-действия от игроков); клиентский view лишь
+  // показывает разный UI из ОДНОГО файла. См. dm-layer-map.md, этап 0.
+  // ===================================================================
+  store.me = { role: net.role, member: net.member, char: net.char };
+
+  function applyRoleView() {
+    const isGm = store.me && store.me.role === 'gm';
+    const tabs = document.getElementById('hbTabs');
+    const body = document.getElementById('hbBody');
+    const dm = document.getElementById('dmConsole');
+    if (isGm) {
+      // мастер не играет персонажем: ни орба, ни слотов — вместо них пульт
+      if (tabs) tabs.style.display = 'none';
+      if (body) body.style.display = 'none';
+      if (dm) dm.classList.add('show');
+    } else {
+      if (tabs) tabs.style.display = '';
+      if (body) body.style.display = '';
+      if (dm) dm.classList.remove('show');
+    }
+  }
+  applyRoleView();
+
+  // Пульт мастера — пока КАРКАС: кнопки-заглушки под этапы 1–4 (без логики).
+  document.querySelectorAll('.dm-btn').forEach(b => {
+    b.onclick = () => console.log('[dm-console] TODO:', b.dataset.dm);   // этапы 1–4 повесят реальные действия
+  });
 
   // первичная отрисовка (пустые состояния) до прихода данных
   renderSheet();
@@ -1266,6 +1365,20 @@
     .then(r => r.json())
     .then(list => { store.roster = {}; (list || []).forEach(c => { store.roster[c.charId] = c; }); renderParty(); })
     .catch(() => {});
+
+  // ---- бар камер: сворачивание, тумблеры своих медиа, выход ----
+  const partyEl = document.getElementById('party');
+  document.getElementById('partyCollapse').onclick = (e) => {
+    partyEl.classList.toggle('collapsed');
+    const collapsed = partyEl.classList.contains('collapsed');
+    document.querySelector('.app').style.setProperty('--party-w', collapsed ? '54px' : '250px');
+    e.currentTarget.textContent = collapsed ? '⮜' : '⮞';
+  };
+  // тумблеры своих медиа — ЛОКАЛЬНО (реальный WebRTC mute/video — TODO)
+  ['selfMic', 'selfCam', 'selfSpk'].forEach(id => {
+    document.getElementById(id).onclick = (e) => e.currentTarget.classList.toggle('off');
+  });
+  document.getElementById('selfLeave').onclick = () => exitToLobby();
 
   // ===================================================================
   // Карта — токены в КЛЕТКАХ (CLAUDE.md: токены хранятся в клетках,
