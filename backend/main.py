@@ -14,8 +14,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 try:
@@ -670,6 +670,57 @@ def health():
 def api_catalog():
     # каталог для мастера создания персонажа (классы/расы/предыстории + spells/items)
     return content_catalog.snapshot()
+
+
+MAX_ASSET_BYTES = 12 * 1024 * 1024   # 12 МБ — карты тяжёлые, но не безразмерные
+
+
+def _game_exists(room_id: str) -> bool:
+    return any(g["roomId"] == room_id for g in db.list_games())
+
+
+@app.post("/api/games/{room_id}/assets")
+async def api_upload_asset(room_id: str, request: Request):
+    # Загрузка карты-картинки. Доступна В РАМКАХ игры (room-scoped): редактор сцен —
+    # инструмент мастера, песочница/стол открыты как gm. Тяжёлый бинарь идёт по
+    # HTTP (не через WS-снапшоты). Тело — сырые байты файла, mime — из Content-Type,
+    # размеры — из query (клиент знает их после canvas).
+    if not _game_exists(room_id):
+        raise HTTPException(status_code=404, detail="game not found")
+    data = await request.body()
+    if not data:
+        raise HTTPException(status_code=400, detail="empty body")
+    if len(data) > MAX_ASSET_BYTES:
+        raise HTTPException(status_code=413, detail="asset too large")
+    mime = request.headers.get("content-type", "application/octet-stream").split(";")[0].strip()
+    if not mime.startswith("image/"):
+        raise HTTPException(status_code=415, detail="image required")
+
+    def _int(v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+    q = request.query_params
+    asset_id = "asset_" + secrets.token_hex(6)
+    meta = db.save_asset(asset_id, room_id, q.get("kind", "map"), mime,
+                         _int(q.get("width")), _int(q.get("height")), data)
+    return {"assetId": asset_id, "width": meta["width"], "height": meta["height"], "mime": mime}
+
+
+@app.get("/api/games/{room_id}/assets/{asset_id}")
+def api_get_asset(room_id: str, asset_id: str):
+    # Отдача карты: id уникален на контент → кэшируем агрессивно (immutable).
+    row = db.get_asset(asset_id)
+    if not row or row["room_id"] != room_id:
+        raise HTTPException(status_code=404, detail="asset not found")
+    return Response(content=row["bytes"], media_type=row["mime"],
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@app.get("/api/games/{room_id}/assets")
+def api_list_assets(room_id: str):
+    return db.list_assets(room_id)
 
 
 @app.get("/api/games")
