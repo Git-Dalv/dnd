@@ -223,6 +223,13 @@ def merged_creatures(room_id: str) -> list[dict]:
     return list(merged.values())
 
 
+async def broadcast_creatures(room: "Room"):
+    """Разослать всем актуальный бестиарий (srd + homebrew). Зовётся после правки
+    homebrew-существа (создан/изменён/удалён), чтобы клиенты обновили store.bestiary
+    — тем же снапшотом, что приходит при подключении."""
+    await room.broadcast({"type": "creatures.snapshot", "creatures": merged_creatures(room.room_id)})
+
+
 rooms: dict[str, Room] = {}
 
 
@@ -316,6 +323,8 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     await ws.send_text(json.dumps({"type": "mode.set", "mode": room.mode}, ensure_ascii=False))
     # каталог контента (заклинания/предметы/классы/расы/предыстории) — для codex/визарда
     await ws.send_text(json.dumps({"type": "catalog.snapshot", **content_catalog.snapshot()}, ensure_ascii=False))
+    # бестиарий: srd + homebrew единым списком (как catalog.snapshot) — для выбора существ
+    await ws.send_text(json.dumps({"type": "creatures.snapshot", "creatures": merged_creatures(room_id)}, ensure_ascii=False))
     # приватные заметки мастера — только мастеру (игрокам не шлём)
     if role == "gm":
         await ws.send_text(json.dumps({"type": "notes.snapshot", "notes": room.notes}, ensure_ascii=False))

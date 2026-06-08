@@ -724,6 +724,7 @@
     members: {},
     log: [],
     catalog: { spells: [], items: [], creatures: [] },
+    bestiary: [],                 // существа бестиария srd+hb (creatures.snapshot)
     character: null,              // мой персонаж (собранный сервером)
     seats: [],                    // состав мест (для подписей видеокарточек)
     roster: {},                   // charId -> { name, ... } для имён в партии
@@ -809,6 +810,11 @@
     'catalog.snapshot': (msg) => {
       store.catalog = { spells: msg.spells || [], items: msg.items || [], creatures: msg.creatures || [] };
       renderCodex();
+    },
+    // бестиарий: srd + homebrew единым списком (снапшот при connect, обновление при правке)
+    'creatures.snapshot': (msg) => {
+      store.bestiary = msg.creatures || [];
+      if (typeof renderBestiary === 'function') renderBestiary();
     },
     // мой персонаж (собран сервером: rolls с modifier) — личное сообщение
     'character.snapshot': (msg) => {
