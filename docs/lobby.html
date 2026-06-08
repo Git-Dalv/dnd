@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VTT — Лобби</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+
+  :root {
+    --bg: #14110d;
+    --panel: #1f1a13;
+    --panel-2: #2a2319;
+    --edge: #3d3324;
+    --edge-bright: #5a4a30;
+    --ink: #e8ddc7;
+    --ink-dim: #a89878;
+    --gold: #c9a253;
+    --gold-bright: #e8c878;
+    --blood: #8a2e22;
+    --green: #4a7a3a;
+    --shadow: rgba(0,0,0,.55);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Spectral', serif;
+    background: var(--bg); color: var(--ink);
+    min-height: 100vh;
+    background-image:
+      radial-gradient(circle at 15% 10%, rgba(201,162,83,.05), transparent 40%),
+      radial-gradient(circle at 90% 90%, rgba(138,46,34,.06), transparent 45%);
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 48px 24px 64px; }
+
+  header { text-align: center; margin-bottom: 32px; }
+  h1 { font-family: 'Cinzel', serif; font-weight: 700; font-size: 30px; color: var(--gold-bright);
+    letter-spacing: .08em; }
+  .sub { color: var(--ink-dim); font-style: italic; font-size: 14px; margin-top: 6px; }
+
+  /* create panel */
+  .create { background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--gold); border-radius: 8px; padding: 16px 18px; margin-bottom: 28px;
+    box-shadow: 0 3px 14px var(--shadow); }
+  .create-row { display: flex; gap: 10px; align-items: center; }
+  .create input { flex: 1; background: var(--bg); border: 1px solid var(--edge-bright); border-radius: 5px;
+    color: var(--ink); font-family: 'Spectral'; font-size: 15px; padding: 10px 12px; }
+  .create input:focus { outline: none; border-color: var(--gold); }
+  .create input::placeholder { color: var(--ink-dim); font-style: italic; }
+  .btn { font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: .04em; padding: 10px 18px;
+    border-radius: 5px; cursor: pointer; border: none; white-space: nowrap; transition: all .15s; }
+  .btn-primary { background: var(--gold); color: #1a140a; }
+  .btn-primary:hover { background: var(--gold-bright); }
+  .btn-primary:disabled { opacity: .5; cursor: default; }
+
+  /* games list */
+  .section-title { font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: .1em; color: var(--ink-dim);
+    text-transform: uppercase; margin: 0 4px 12px; border-bottom: 1px solid var(--edge); padding-bottom: 8px; }
+  .games { display: flex; flex-direction: column; gap: 10px; }
+  .game { display: flex; align-items: center; gap: 14px; text-align: left; width: 100%;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--edge); border-left: 3px solid var(--edge-bright); border-radius: 6px;
+    padding: 14px 16px; cursor: pointer; transition: all .15s; box-shadow: 0 2px 6px var(--shadow); }
+  .game:hover { border-left-color: var(--gold); transform: translateX(2px); }
+  .game-main { flex: 1; min-width: 0; }
+  .game-name { font-family: 'Cinzel', serif; font-size: 16px; color: var(--ink); }
+  .game-meta { font-size: 12px; color: var(--ink-dim); margin-top: 4px; }
+  .game-code { font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: .06em; color: var(--gold);
+    background: rgba(201,162,83,.08); border: 1px solid var(--edge-bright); border-radius: 4px;
+    padding: 5px 9px; flex-shrink: 0; }
+  .game-go { color: var(--gold-bright); font-size: 18px; flex-shrink: 0; }
+
+  .empty { text-align: center; color: var(--ink-dim); font-style: italic; font-size: 14px;
+    padding: 40px 20px; border: 1px dashed var(--edge); border-radius: 8px; }
+  .error { color: #d98a7a; font-size: 13px; margin-top: 10px; min-height: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>⚜ Виртуальный стол</h1>
+    <div class="sub">Выберите игру или создайте новую</div>
+  </header>
+
+  <div class="create">
+    <div class="create-row">
+      <input id="gameName" type="text" placeholder="Название новой игры (напр. Waterdeep: Dragon Heist)" autocomplete="off">
+      <button class="btn btn-primary" id="createBtn">Создать игру</button>
+    </div>
+    <div class="error" id="createErr"></div>
+  </div>
+
+  <div class="section-title">Игры</div>
+  <div class="games" id="gamesList"></div>
+</div>
+
+<script>
+  // Лобби — только fetch к /api/*. WS тут нет. room_id выбранной/созданной
+  // игры передаём дальше (на экран выбора места) через query-параметр.
+  const gamesList = document.getElementById('gamesList');
+  const nameInput = document.getElementById('gameName');
+  const createBtn = document.getElementById('createBtn');
+  const createErr = document.getElementById('createErr');
+
+  // переход на экран выбора места (промпт 4); room_id — в query
+  function goToSeats(roomId) {
+    location.href = 'seats.html?room=' + encodeURIComponent(roomId);
+  }
+
+  function fmtDate(unixSec) {
+    if (!unixSec) return '';
+    const d = new Date(unixSec * 1000);
+    return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
+  function renderGames(games) {
+    gamesList.innerHTML = '';
+    if (!games.length) {
+      gamesList.innerHTML = '<div class="empty">Игр пока нет — создайте первую</div>';
+      return;
+    }
+    for (const g of games) {
+      const row = document.createElement('button');
+      row.className = 'game';
+      row.onclick = () => goToSeats(g.roomId);
+
+      const main = document.createElement('div');
+      main.className = 'game-main';
+      const nm = document.createElement('div');
+      nm.className = 'game-name';
+      nm.textContent = g.name || 'Без названия';
+      const meta = document.createElement('div');
+      meta.className = 'game-meta';
+      meta.textContent = 'Создана: ' + fmtDate(g.createdAt);
+      main.appendChild(nm); main.appendChild(meta);
+
+      const code = document.createElement('div');
+      code.className = 'game-code';
+      code.textContent = g.roomId;
+
+      const go = document.createElement('div');
+      go.className = 'game-go';
+      go.textContent = '→';
+
+      row.appendChild(main); row.appendChild(code); row.appendChild(go);
+      gamesList.appendChild(row);
+    }
+  }
+
+  async function loadGames() {
+    try {
+      const res = await fetch('/api/games');
+      const games = await res.json();
+      renderGames(games);
+    } catch (e) {
+      gamesList.innerHTML = '<div class="empty">Не удалось загрузить список игр</div>';
+    }
+  }
+
+  async function createGame() {
+    const name = nameInput.value.trim();
+    createErr.textContent = '';
+    if (!name) {
+      createErr.textContent = 'Введите название игры';
+      nameInput.focus();
+      return;
+    }
+    createBtn.disabled = true;
+    try {
+      const res = await fetch('/api/games', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // gmId создателя пока заглушкой; реальная привязка появится с авторизацией
+        body: JSON.stringify({ name, gmId: 'gm' }),
+      });
+      if (!res.ok) throw new Error('http ' + res.status);
+      const game = await res.json();
+      goToSeats(game.roomId);   // сразу к выбору места для созданной игры
+    } catch (e) {
+      createErr.textContent = 'Не удалось создать игру';
+      createBtn.disabled = false;
+    }
+  }
+
+  createBtn.onclick = createGame;
+  nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') createGame(); });
+
+  loadGames();
+</script>
+</body>
+</html>
