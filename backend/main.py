@@ -529,8 +529,18 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
         s = room.scenes.get(msg.get("sceneId"))
         if not s:
             return
+        # обновляем только переданные поля (как map/grid)
         if "map" in msg:
             s["map"] = msg.get("map")
+        if "mapAssetId" in msg:
+            s["mapAssetId"] = msg.get("mapAssetId")
+        if "name" in msg and msg.get("name"):
+            s["name"] = msg["name"]
+        if "fogEnabled" in msg:
+            s["fogEnabled"] = bool(msg["fogEnabled"])
+        for k in ("notes", "searchKey", "description"):
+            if k in msg:
+                s[k] = str(msg.get(k) or "")
         if isinstance(msg.get("grid"), dict):
             g = s.get("grid", dict(DEFAULT_GRID))
             for k in ("size", "offsetX", "offsetY"):
@@ -540,7 +550,8 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
                     except (TypeError, ValueError):
                         pass
             s["grid"] = g
-        await room.broadcast({"type": "scene.updated", "sceneId": s["id"], "map": s.get("map"), "grid": s.get("grid")})
+        # broadcast ПОЛНОЕ состояние сцены (а не только map/grid)
+        await room.broadcast({"type": "scene.updated", "sceneId": s["id"], "state": room.scene_state(s["id"])})
         room.persist_tokens()
         return
 
