@@ -497,6 +497,7 @@
         <div class="dev-tool" data-tool="grid" title="Сетка">▦</div>
         <div class="dev-tool" data-tool="scenes" title="Сцены">🗺</div>
         <div class="dev-tool" data-tool="notes" title="Заметки мастера">📝</div>
+        <div class="dev-tool" data-tool="export" title="Экспорт сцены в PNG">📤</div>
         <div class="dev-tool" data-tool="delete" title="Удалить">🗑</div>
       </div>
       <!-- выбор шаблона NPC (виден, когда активен инструмент NPC) -->
@@ -1666,6 +1667,7 @@
     document.querySelectorAll('.dev-tool').forEach(btn => {
       btn.onclick = () => {
         const t = btn.dataset.tool;
+        if (t === 'export') { exportScenePng(); return; }   // действие, не режим
         activeTool = (activeTool === t) ? null : t; // повторный клик — выключить
         document.querySelectorAll('.dev-tool').forEach(b => b.classList.toggle('active', b.dataset.tool === activeTool));
         document.getElementById('npcTemplates').classList.toggle('show', activeTool === 'npc');
@@ -1942,6 +1944,60 @@
     };
   }
   function openScenesTool() { renderScenesTool(); document.getElementById('sceneWin').classList.add('show'); }
+
+  // SC6: экспорт текущей сцены (фон+сетка+токены+туман) в PNG-файл на скачивание.
+  // Карта с того же origin (/api/.../assets) — canvas не «грязный», toBlob работает.
+  function exportScenePng() {
+    const sceneName = (store.scenes.find(s => s.id === store.activeSceneId) || {}).name || 'scene';
+    // граница экспорта — по токенам (+поле), не меньше 12x9 клеток
+    let maxX = 12, maxY = 9;
+    for (const t of (store.tokens || [])) { maxX = Math.max(maxX, t.x + 2); maxY = Math.max(maxY, t.y + 2); }
+    const W = maxX * GRID, H = maxY * GRID;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#16130d'; ctx.fillRect(0, 0, W, H);
+
+    const drawRest = () => {
+      // сетка
+      ctx.strokeStyle = 'rgba(201,162,83,.18)'; ctx.lineWidth = 1;
+      for (let x = GRID_OFFSET.x; x <= W; x += GRID) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+      for (let y = GRID_OFFSET.y; y <= H; y += GRID) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+      // токены: круг + имя
+      for (const t of (store.tokens || [])) {
+        if (t.hidden && !(store.me && (store.me.dev || store.me.role === 'gm'))) continue;
+        const cx = t.x * GRID + GRID_OFFSET.x + GRID / 2, cy = t.y * GRID + GRID_OFFSET.y + GRID / 2, r = GRID * 0.42;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = t.enemy ? '#5a201a' : '#20323f'; ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = t.enemy ? '#8a2e22' : '#c9a253'; ctx.stroke();
+        ctx.fillStyle = '#e8ddc7'; ctx.font = `${Math.round(GRID * 0.2)}px Spectral, serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText((t.name || '').slice(0, 8), cx, cy);
+      }
+      // туман (если включён)
+      if (store.scene && store.scene.fogEnabled) {
+        const revealed = new Set((store.fog || []).map(c => c[0] + ',' + c[1]));
+        ctx.fillStyle = 'rgba(8,6,4,.92)';
+        for (let y = 0; y * GRID < H; y++) for (let x = 0; x * GRID < W; x++) {
+          if (!revealed.has(x + ',' + y)) ctx.fillRect(x * GRID + GRID_OFFSET.x, y * GRID + GRID_OFFSET.y, GRID, GRID);
+        }
+      }
+      cv.toBlob((blob) => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = sceneName + '.png';
+        a.click(); URL.revokeObjectURL(a.href);
+      }, 'image/png');
+    };
+
+    const mapUrl = store.scene.mapAssetId
+      ? `/api/games/${encodeURIComponent(net.room)}/assets/${store.scene.mapAssetId}`
+      : (store.scene.map || null);
+    if (mapUrl) {
+      const img = new Image();
+      img.onload = () => { ctx.drawImage(img, 0, 0, W, H); drawRest(); };
+      img.onerror = drawRest;
+      img.src = mapUrl;
+    } else drawRest();
+  }
 
   // окно параметров сцены (создание sceneId=null / редактирование активной)
   let sceneParamAssetId = null;   // загруженный mapAssetId (ожидает сохранения)
