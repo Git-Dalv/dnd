@@ -745,9 +745,14 @@
       store.tokens = msg.tokens || [];
       renderTokens();
     },
-    // новый токен (NPC, созданный мастером) — появляется у всех
+    // новый токен (NPC/расстановка мастером) — появляется у всех
     'token.added': (msg) => {
       if (msg.token) { store.tokens.push(msg.token); renderTokens(); }
+    },
+    // токен удалён мастером
+    'token.removed': (msg) => {
+      store.tokens = (store.tokens || []).filter(t => t.id !== msg.tokenId);
+      renderTokens();
     },
     // подтверждённое сервером перемещение (источник истины) — применяем ТУТ
     'token.moved': (msg) => {
@@ -1545,6 +1550,11 @@
   // заглушки до S5 (инструменты «Сетка»/«Сцены» получат логику там)
   function openGridTool() { console.log('[sandbox] grid tool (S5)'); }
   function openScenesTool() { console.log('[sandbox] scenes tool (S5)'); }
+  // постановка NPC из шаблона — реализуется в S6; пока минимально через npc.create
+  function placeNpcAt(cx, cy) {
+    net.send({ type: 'npc.create', x: cx, y: cy, count: 1,
+      statblock: { name: 'NPC', ac: 12, hp: { current: 10, max: 10 }, abilities: {}, actions: [] } });
+  }
 
   // Пульт мастера (gm-only по виду; сервер всё равно проверяет права).
   document.querySelectorAll('.dm-btn').forEach(b => {
@@ -1740,20 +1750,52 @@
       zoomTo(e.clientX - rect.left, e.clientY - rect.top, e.deltaY < 0 ? 1.1 : 0.9);
     }, { passive: false });
 
+    // экран -> клетка мира (для инструментов песочницы)
+    function screenToCell(clientX, clientY) {
+      const rect = vp.getBoundingClientRect();
+      const wx = (clientX - rect.left - view.x) / view.zoom;
+      const wy = (clientY - rect.top - view.y) / view.zoom;
+      return [Math.floor(wx / GRID), Math.floor(wy / GRID)];
+    }
+    // dispatcher инструментов палитры на чистый клик по карте (S3/S4/S6)
+    function mapToolClick(clientX, clientY) {
+      const [cx, cy] = screenToCell(clientX, clientY);
+      if (activeTool === 'token') {
+        net.send({ type: 'token.add', token: { name: 'Токен', x: cx, y: cy } });
+      } else if (activeTool === 'npc') {
+        placeNpcAt(cx, cy);                  // S6: из выбранного шаблона
+      }
+      // fog-reveal/fog-hide обрабатываются кистью (S4) на mousemove/mouseup
+    }
+
+    // кисть тумана — реализуется в S4 (копит задетые клетки, шлёт пачкой)
+    function fogBrushStart() {}
+    function fogBrushMove() {}
+    function fogBrushEnd() {}
+
     // пан — таскание по пустому месту (по токену не панить)
     let drag = null;
     vp.addEventListener('mousedown', (e) => {
       if (e.target.closest('.token')) return;
-      drag = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y };
+      drag = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false };
       vp.classList.add('dragging');
+      if (activeTool === 'fog-reveal' || activeTool === 'fog-hide') fogBrushStart(e);
     });
     window.addEventListener('mousemove', (e) => {
       if (!drag) return;
+      if (Math.abs(e.clientX - drag.sx) > 4 || Math.abs(e.clientY - drag.sy) > 4) drag.moved = true;
+      if (activeTool === 'fog-reveal' || activeTool === 'fog-hide') { fogBrushMove(e); return; }  // кисть тумана не панит
+      if (activeTool) return;               // в режиме инструмента карту не панорамируем
       view.x = drag.ox + (e.clientX - drag.sx);
       view.y = drag.oy + (e.clientY - drag.sy);
       apply();
     });
-    window.addEventListener('mouseup', () => { drag = null; vp.classList.remove('dragging'); });
+    window.addEventListener('mouseup', (e) => {
+      if (!drag) return;
+      const d = drag; drag = null; vp.classList.remove('dragging');
+      if (activeTool === 'fog-reveal' || activeTool === 'fog-hide') { fogBrushEnd(); return; }
+      if (activeTool && !d.moved) mapToolClick(d.sx, d.sy);   // чистый клик инструментом
+    });
 
     // --- перетаскивание ТОКЕНА (отдельно от пана) ---
     // Тащить можно только свои токены (.movable). Drag — это лишь НАМЕРЕНИЕ:
@@ -1761,6 +1803,11 @@
     let tokDrag = null;
     const CLICK_EPS = 4;                    // порог: меньше сдвига — это клик, не drag
     vp.addEventListener('mousedown', (e) => {
+      const tokEl = e.target.closest('.token');
+      if (activeTool) {                      // в режиме инструмента токены не таскаем
+        if (activeTool === 'delete' && tokEl) { e.stopPropagation(); net.send({ type: 'token.remove', tokenId: tokEl.dataset.id }); }
+        return;
+      }
       const el = e.target.closest('.token.movable');
       if (!el) return;
       e.stopPropagation();                 // не стартуем пан карты

@@ -387,6 +387,36 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
         room.persist_tokens()
         return
 
+    # --- добавить токен (gm-only): расстановка из песочницы/игры ---
+    if mtype == "token.add":
+        if not require_gm(room.members.get(member_id)):
+            return
+        t = dict(msg.get("token") or {})
+        t["id"] = t.get("id") or ("tok_" + secrets.token_hex(3))
+        t.setdefault("controlledBy", "gm")
+        t.setdefault("enemy", False)
+        t.setdefault("name", "Токен")
+        try:
+            t["x"] = max(0, min(GRID_MAX, int(t.get("x", 0))))
+            t["y"] = max(0, min(GRID_MAX, int(t.get("y", 0))))
+        except (TypeError, ValueError):
+            return
+        room.tokens[t["id"]] = t
+        room.persist_tokens()
+        await room.broadcast({"type": "token.added", "token": t})
+        return
+
+    # --- удалить токен (gm-only) ---
+    if mtype == "token.remove":
+        if not require_gm(room.members.get(member_id)):
+            return
+        tid = msg.get("tokenId")
+        if tid in room.tokens:
+            del room.tokens[tid]
+            room.persist_tokens()
+            await room.broadcast({"type": "token.removed", "tokenId": tid})
+        return
+
     # --- старт боя: сервер кидает инициативу (gm-only, бросок считает сервер) ---
     if mtype == "combat.start":
         if not require_gm(room.members.get(member_id)):
