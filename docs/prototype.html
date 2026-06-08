@@ -556,6 +556,16 @@
     <div class="win-body" id="charBody"></div>
   </div>
 </div>
+<!-- мини-лист NPC (открывается кликом по фишке; рендер тот же sheetHtml) -->
+<div class="win-back" id="npcWin">
+  <div class="win">
+    <div class="win-head">
+      <h3>👹 Статблок</h3>
+      <button class="win-x" id="npcX">✕</button>
+    </div>
+    <div class="win-body sheet" id="npcBody"></div>
+  </div>
+</div>
 
 <script>
   // ===================================================================
@@ -674,6 +684,10 @@
     'tokens.snapshot': (msg) => {
       store.tokens = msg.tokens || [];
       renderTokens();
+    },
+    // новый токен (NPC, созданный мастером) — появляется у всех
+    'token.added': (msg) => {
+      if (msg.token) { store.tokens.push(msg.token); renderTokens(); }
     },
     // подтверждённое сервером перемещение (источник истины) — применяем ТУТ
     'token.moved': (msg) => {
@@ -967,7 +981,7 @@
   document.getElementById('tabSpells').onclick = () => openWin('spellsWin', fillSpells);
   document.getElementById('tabInv').onclick = () => openWin('invWin', fillInv);
   document.getElementById('tabChar').onclick = () => openWin('charWin', fillChar);
-  for (const k of ['spells', 'inv', 'char']) {
+  for (const k of ['spells', 'inv', 'char', 'npc']) {
     const back = document.getElementById(k + 'Win');
     document.getElementById(k + 'X').onclick = () => closeWin(k + 'Win');
     back.onclick = (e) => { if (e.target === back) closeWin(k + 'Win'); };   // клик по фону закрывает
@@ -1083,28 +1097,50 @@
   const abilMod = (score) => Math.floor((Number(score) - 10) / 2);
   const sign = (n) => (n >= 0 ? '+' : '') + n;
 
+  // Единый билдер карточки/статблока (одна структура character-schema). Терпим
+  // к NPC: ac/hp могут лежать сверху (statblock) или в derived (персонаж).
+  function sheetHtml(c) {
+    const m = c.meta || {}, a = c.abilities || {}, d = c.derived || {};
+    const ac = (d.ac ?? c.ac), hp = (d.hp ?? c.hp ?? {});
+    const speed = (d.speed ?? c.speed), init = (d.initiative ?? c.initiative);
+    let stats = '';
+    for (const k of ['str', 'dex', 'con', 'int', 'wis', 'cha']) {
+      if (a[k] == null) continue;
+      stats += `<div class="stat-box"><div class="lbl">${ABIL_RU[k]}</div><div class="val">${a[k]}</div><div class="mod">${sign(abilMod(a[k]))}</div></div>`;
+    }
+    const title = `${esc(c.name || '—')}${c.npc ? ' · NPC' : (m.class ? ' · ' + esc(m.class) : '')}${(!c.npc && m.level) ? ' ' + m.level + ' ур.' : ''}`;
+    const skills = (c.skills || []).map(s => `${esc(s.name || s.id)} ${s.roll ? sign(s.roll.modifier) : ''}`.trim()).join(', ');
+    const acts = (c.actions || []).map(act => {
+      const r = actionPrimaryRoll(act);
+      return esc(act.nameLocal || act.name || '—') + (r ? ` (${r.notation}${r.modifier ? sign(r.modifier) : ''})` : '');
+    }).join(', ');
+    return `<h2>${title}</h2>` +
+      (stats ? `<div class="stat-grid">${stats}</div>` : '') +
+      `<div class="sheet-row"><span><b>КД:</b> ${ac ?? '—'}</span><span><b>Хиты:</b> ${hp.current ?? '—'} / ${hp.max ?? '—'}</span>` +
+      (speed != null ? `<span><b>Скорость:</b> ${speed} фт</span>` : '') +
+      (init != null ? `<span><b>Инициатива:</b> ${sign(init)}</span>` : '') +
+      (c.proficiencyBonus != null ? `<span><b>Бонус мастерства:</b> ${sign(c.proficiencyBonus)}</span>` : '') + `</div>` +
+      (c.type ? `<div class="sheet-row"><b>Тип:</b> ${esc(c.type)}</div>` : '') +
+      (skills ? `<div class="sheet-row"><b>Навыки:</b> ${skills}</div>` : '') +
+      (m.race ? `<div class="sheet-row"><b>Раса:</b> ${esc(m.race)}</div>` : '') +
+      (c.npc && acts ? `<div class="sheet-row"><b>Действия:</b> ${acts}</div>` : '');
+  }
+
   function renderSheet() {
     const el = document.getElementById('view-sheet');
     if (!el) return;
     const c = store.character;
     if (!c) { el.innerHTML = '<h2>Нет персонажа</h2><div class="sheet-row">Выберите персонажа в лобби.</div>'; return; }
-    const m = c.meta || {}, a = c.abilities || {}, d = c.derived || {}, hp = d.hp || {};
-    let stats = '';
-    for (const k of ['str', 'dex', 'con', 'int', 'wis', 'cha']) {
-      const v = (a[k] != null) ? a[k] : '—';
-      const mod = (a[k] != null) ? sign(abilMod(a[k])) : '';
-      stats += `<div class="stat-box"><div class="lbl">${ABIL_RU[k]}</div><div class="val">${v}</div><div class="mod">${mod}</div></div>`;
-    }
-    const skills = (c.skills || []).map(s => `${esc(s.name || s.id)} ${s.roll ? sign(s.roll.modifier) : ''}`.trim()).join(', ');
-    el.innerHTML =
-      `<h2>${esc(c.name || '—')}${m.class ? ' · ' + esc(m.class) : ''}${m.level ? ' ' + m.level + ' ур.' : ''}</h2>` +
-      `<div class="stat-grid">${stats}</div>` +
-      `<div class="sheet-row"><span><b>КД:</b> ${d.ac ?? '—'}</span><span><b>Скорость:</b> ${d.speed ?? '—'} фт</span>` +
-      `<span><b>Бонус мастерства:</b> ${c.proficiencyBonus != null ? sign(c.proficiencyBonus) : '—'}</span>` +
-      `<span><b>Инициатива:</b> ${d.initiative != null ? sign(d.initiative) : '—'}</span></div>` +
-      `<div class="sheet-row"><span><b>Хиты:</b> ${hp.current ?? '—'} / ${hp.max ?? '—'}</span></div>` +
-      (skills ? `<div class="sheet-row"><b>Навыки:</b> ${skills}</div>` : '') +
-      (m.race ? `<div class="sheet-row"><b>Раса:</b> ${esc(m.race)}</div>` : '');
+    el.innerHTML = sheetHtml(c);
+  }
+
+  // мини-лист NPC по клику на фишку — тот же рендер карточки (sheetHtml)
+  function openTokenSheet(tokenId) {
+    const t = (store.tokens || []).find(x => x.id === tokenId);
+    if (!t || !t.statblock) return;            // мини-лист только у NPC со статблоком
+    const sb = Object.assign({ name: t.name }, t.statblock);
+    document.getElementById('npcBody').innerHTML = sheetHtml(sb);
+    document.getElementById('npcWin').classList.add('show');
   }
 
   function actionPrimaryRoll(act) {
@@ -1366,10 +1402,26 @@
   }
   applyRoleView();
 
-  // Пульт мастера — пока КАРКАС: кнопки-заглушки под этапы 1–4 (без логики).
+  // Пульт мастера (gm-only по виду; сервер всё равно проверяет права).
   document.querySelectorAll('.dm-btn').forEach(b => {
-    b.onclick = () => console.log('[dm-console] TODO:', b.dataset.dm);   // этапы 1–4 повесят реальные действия
+    b.onclick = () => dmAction(b.dataset.dm);
   });
+  function dmAction(kind) {
+    if (kind === 'npc') return dmCreateNpc();
+    console.log('[dm-console] TODO:', kind);   // check / scene / combat — следующие этапы
+  }
+  // минимальная форма NPC: имя/HP/AC/копии через prompt() — путь end-to-end
+  function dmCreateNpc() {
+    const name = prompt('NPC: имя', 'Гоблин');
+    if (name === null) return;
+    const hp = parseInt(prompt('Хиты (max)', '7'), 10) || 1;
+    const ac = parseInt(prompt('КД (AC)', '13'), 10) || 10;
+    const count = Math.max(1, parseInt(prompt('Сколько копий', '3'), 10) || 1);
+    net.send({
+      type: 'npc.create', x: 8, y: 8, count,
+      statblock: { name, ac, hp: { current: hp, max: hp }, abilities: {}, actions: [] },
+    });
+  }
 
   // первичная отрисовка (пустые состояния) до прихода данных
   renderSheet();
@@ -1429,6 +1481,9 @@
       el.style.left = (t.x * GRID) + 'px';   // пиксель считает клиент из GRID
       el.style.top  = (t.y * GRID) + 'px';
       el.textContent = t.name;
+      // клик по НЕдвигаемому токену открывает мини-лист (движение — у movable
+      // через drag-IIFE, который сам отличит клик от перетаскивания)
+      if (!canMove(t)) el.onclick = () => openTokenSheet(t.id);
       world.appendChild(el);
     }
   }
@@ -1497,12 +1552,13 @@
     // Тащить можно только свои токены (.movable). Drag — это лишь НАМЕРЕНИЕ:
     // источник истины по позиции — ответ сервера token.moved.
     let tokDrag = null;
+    const CLICK_EPS = 4;                    // порог: меньше сдвига — это клик, не drag
     vp.addEventListener('mousedown', (e) => {
       const el = e.target.closest('.token.movable');
       if (!el) return;
       e.stopPropagation();                 // не стартуем пан карты
       tokDrag = {
-        el, id: el.dataset.id, sx: e.clientX, sy: e.clientY,
+        el, id: el.dataset.id, sx: e.clientX, sy: e.clientY, moved: false,
         startLeft: parseFloat(el.style.left) || 0,
         startTop: parseFloat(el.style.top) || 0,
       };
@@ -1510,17 +1566,19 @@
     });
     window.addEventListener('mousemove', (e) => {
       if (!tokDrag) return;
+      if (Math.abs(e.clientX - tokDrag.sx) > CLICK_EPS || Math.abs(e.clientY - tokDrag.sy) > CLICK_EPS) tokDrag.moved = true;
       // экранный сдвиг → координаты мира делим на zoom (предпросмотр, store не трогаем)
       tokDrag.el.style.left = (tokDrag.startLeft + (e.clientX - tokDrag.sx) / view.zoom) + 'px';
       tokDrag.el.style.top  = (tokDrag.startTop  + (e.clientY - tokDrag.sy) / view.zoom) + 'px';
     });
     window.addEventListener('mouseup', () => {
       if (!tokDrag) return;
-      const cx = Math.round((parseFloat(tokDrag.el.style.left) || 0) / GRID);
-      const cy = Math.round((parseFloat(tokDrag.el.style.top) || 0) / GRID);
-      const id = tokDrag.id;
-      tokDrag.el.classList.remove('grabbing');
+      const { el, id, moved } = tokDrag;
+      el.classList.remove('grabbing');
       tokDrag = null;
+      if (!moved) { renderTokens(); openTokenSheet(id); return; }  // чистый клик — мини-лист
+      const cx = Math.round((parseFloat(el.style.left) || 0) / GRID);
+      const cy = Math.round((parseFloat(el.style.top) || 0) / GRID);
       net.send({ type: 'token.move', tokenId: id, to: { x: cx, y: cy } });
       renderTokens();   // вернуть превью к store-значению; новая клетка — по token.moved
     });

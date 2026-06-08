@@ -326,6 +326,38 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
                               "to": {"x": x, "y": y}, "by": member_id})
         return
 
+    # --- создание NPC-фишек: только мастер (проверка прав на сервере) ---
+    if mtype == "npc.create":
+        if not require_gm(room.members.get(member_id)):
+            return  # gm-only: игроку молча отказываем
+        statblock = dict(msg.get("statblock") or {})
+        statblock["npc"] = True                       # единая структура с character-schema
+        base_name = statblock.get("name") or "NPC"
+        try:
+            count = int(msg.get("count", 1))
+        except (TypeError, ValueError):
+            count = 1
+        count = max(1, min(20, count))
+        try:
+            bx, by = int(msg.get("x", 5)), int(msg.get("y", 5))
+        except (TypeError, ValueError):
+            bx, by = 5, 5
+        added = []
+        for i in range(count):
+            tok_id = "tok_npc_" + secrets.token_hex(3)
+            name = base_name if count == 1 else f"{base_name} {i + 1}"
+            # копии чуть смещаем, чтобы не легли в одну клетку; клампим в карту
+            x = max(0, min(GRID_MAX, bx + (i % 5)))
+            y = max(0, min(GRID_MAX, by + (i // 5)))
+            tok = {"id": tok_id, "name": name, "x": x, "y": y, "enemy": True,
+                   "controlledBy": "gm", "statblock": dict(statblock)}
+            room.tokens[tok_id] = tok
+            added.append(tok)
+        room.persist_tokens()                          # сессионное событие — сохраняем
+        for tok in added:
+            await room.broadcast({"type": "token.added", "token": tok})
+        return
+
     # TODO: scene.switch (gm only), combat.start/next (gm only),
     #       audio.play (gm only), fog.reveal (gm only)
 
