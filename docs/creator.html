@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VTT — Создание персонажа</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+  :root{ --bg:#14110d;--panel:#1f1a13;--panel-2:#2a2319;--edge:#3d3324;--edge-bright:#5a4a30;
+    --ink:#e8ddc7;--ink-dim:#a89878;--gold:#c9a253;--gold-bright:#e8c878;--blood:#8a2e22;--green:#4a7a3a; }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Spectral',serif;background:var(--bg);color:var(--ink);min-height:100vh;
+    background-image:radial-gradient(circle at 15% 10%,rgba(201,162,83,.05),transparent 40%),radial-gradient(circle at 90% 90%,rgba(138,46,34,.06),transparent 45%);}
+  .wrap{max-width:880px;margin:0 auto;padding:28px 24px 90px}
+  a.back{color:var(--ink-dim);font-size:13px;text-decoration:none}
+  a.back:hover{color:var(--gold)}
+  h1{font-family:'Cinzel';font-weight:700;font-size:24px;color:var(--gold-bright);letter-spacing:.06em;text-align:center;margin:10px 0 4px}
+
+  /* прогресс шагов */
+  .steps{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:18px 0 22px}
+  .step-chip{font-family:'Cinzel';font-size:11px;letter-spacing:.03em;color:var(--ink-dim);
+    border:1px solid var(--edge);border-radius:20px;padding:6px 12px;display:flex;align-items:center;gap:6px}
+  .step-chip .n{width:18px;height:18px;border-radius:50%;background:var(--panel-2);border:1px solid var(--edge-bright);
+    display:flex;align-items:center;justify-content:center;font-size:10px}
+  .step-chip.active{color:var(--gold-bright);border-color:var(--gold)}
+  .step-chip.active .n{background:var(--gold);color:#1a140a;border-color:var(--gold)}
+  .step-chip.done .n{background:var(--green);color:#0f0d0a}
+
+  .panel{background:linear-gradient(180deg,var(--panel-2),var(--panel));border:1px solid var(--edge);
+    border-radius:9px;padding:20px 22px;min-height:300px;box-shadow:0 3px 14px rgba(0,0,0,.45)}
+  .panel h2{font-family:'Cinzel';color:var(--gold-bright);font-size:18px;margin-bottom:4px}
+  .panel .sub{color:var(--ink-dim);font-style:italic;font-size:13px;margin-bottom:16px}
+
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .card{background:#241c14;border:1px solid var(--edge-bright);border-radius:7px;padding:12px;cursor:pointer;transition:all .12s}
+  .card:hover{border-color:var(--gold)}
+  .card.sel{border-color:var(--gold-bright);background:#322618;box-shadow:0 0 10px rgba(201,162,83,.3)}
+  .card .cn{font-family:'Cinzel';font-size:15px;color:var(--ink)}
+  .card .cd{font-size:11px;color:var(--ink-dim);margin-top:4px}
+
+  .detail{margin-top:16px;border-top:1px solid var(--edge);padding-top:14px;font-size:13px;color:var(--ink-dim)}
+  .detail b{color:var(--ink);font-family:'Cinzel';font-weight:600}
+  .note{font-size:11px;color:var(--gold);font-style:italic;margin-top:6px}
+
+  label{display:block;font-size:11px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 4px}
+  input,select,textarea{width:100%;background:var(--bg);border:1px solid var(--edge-bright);border-radius:5px;
+    color:var(--ink);font-family:'Spectral';font-size:14px;padding:8px 10px}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold)}
+  textarea{resize:vertical;min-height:56px}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .row>div{flex:1;min-width:120px}
+
+  .abil-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-top:10px}
+  .abil-box{background:#241c14;border:1px solid var(--edge);border-radius:6px;padding:8px;text-align:center}
+  .abil-box .lbl{font-size:10px;color:var(--ink-dim);text-transform:uppercase}
+  .abil-box input,.abil-box select{text-align:center;padding:4px}
+  .abil-box .bonus{font-size:10px;color:var(--gold)}
+  .abil-box .total{font-family:'Cinzel';font-size:18px;color:var(--ink)}
+  .abil-box .mod{font-size:11px;color:var(--gold-bright)}
+
+  .skill-list{display:grid;grid-template-columns:repeat(2,1fr);gap:4px 16px;margin-top:8px}
+  .skill-item{display:flex;align-items:center;gap:8px;font-size:13px;padding:3px 0}
+  .skill-item.locked{color:var(--ink-dim)}
+  .skill-item .mod{margin-left:auto;font-family:'Cinzel';color:var(--gold)}
+
+  .avatar-row{display:flex;gap:16px;align-items:flex-start;margin-top:10px}
+  .avatar-prev{width:96px;height:96px;border-radius:8px;border:1px solid var(--edge-bright);background:#241c14;
+    background-size:cover;background-position:center;flex-shrink:0}
+
+  .nav{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(180deg,rgba(20,16,11,.6),rgba(15,13,10,.97));
+    border-top:1px solid var(--edge);padding:14px 24px;display:flex;justify-content:center;gap:12px;z-index:20}
+  .btn{font-family:'Cinzel';font-size:13px;letter-spacing:.03em;padding:11px 22px;border-radius:6px;cursor:pointer;border:none;transition:all .15s}
+  .btn-primary{background:var(--gold);color:#1a140a}
+  .btn-primary:hover{background:var(--gold-bright)}
+  .btn-primary:disabled{opacity:.4;cursor:default}
+  .btn-ghost{background:transparent;color:var(--ink-dim);border:1px solid var(--edge-bright)}
+  .btn-ghost:hover{color:var(--ink);border-color:var(--gold)}
+  .err{color:#d98a7a;font-size:13px;text-align:center;min-height:16px;margin-top:6px}
+  .summary-row{display:flex;gap:24px;font-size:14px;margin-bottom:8px;flex-wrap:wrap}
+  .summary-row b{color:var(--ink);font-family:'Cinzel'}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" id="backLink" href="#">← отмена</a>
+  <h1>Создание персонажа</h1>
+  <div class="steps" id="stepChips"></div>
+  <div class="panel" id="stepPanel"></div>
+  <div class="err" id="err"></div>
+</div>
+
+<div class="nav">
+  <button class="btn btn-ghost" id="btnBack">Назад</button>
+  <button class="btn btn-primary" id="btnNext">Далее</button>
+</div>
+
+<script>
+  // ===== служебное =====
+  const params = new URLSearchParams(location.search);
+  const room = params.get('room') || 'room_dragonheist';
+  const owner = params.get('owner') || ('m_' + Math.random().toString(36).slice(2, 9));
+  document.getElementById('backLink').href = 'seats.html?room=' + encodeURIComponent(room);
+
+  const ABIL = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
+  const ABIL_RU = { str: 'Сила', dex: 'Ловк', con: 'Тело', int: 'Инт', wis: 'Мудр', cha: 'Хар' };
+  const SKILL_ABILITY = {
+    'Acrobatics': 'dex', 'Animal Handling': 'wis', 'Arcana': 'int', 'Athletics': 'str',
+    'Deception': 'cha', 'History': 'int', 'Insight': 'wis', 'Intimidation': 'cha',
+    'Investigation': 'int', 'Medicine': 'wis', 'Nature': 'int', 'Perception': 'wis',
+    'Performance': 'cha', 'Persuasion': 'cha', 'Religion': 'int', 'Sleight of Hand': 'dex',
+    'Stealth': 'dex', 'Survival': 'wis',
+  };
+  const SKILL_RU = {
+    'Acrobatics': 'Акробатика', 'Animal Handling': 'Уход за животными', 'Arcana': 'Магия', 'Athletics': 'Атлетика',
+    'Deception': 'Обман', 'History': 'История', 'Insight': 'Проницательность', 'Intimidation': 'Запугивание',
+    'Investigation': 'Расследование', 'Medicine': 'Медицина', 'Nature': 'Природа', 'Perception': 'Восприятие',
+    'Performance': 'Выступление', 'Religion': 'Религия', 'Sleight of Hand': 'Ловкость рук', 'Stealth': 'Скрытность',
+    'Survival': 'Выживание', 'Persuasion': 'Убеждение',
+  };
+  const ALIGNMENTS = ['Законопослушно-добрый', 'Нейтрально-добрый', 'Хаотично-добрый',
+    'Законопослушно-нейтральный', 'Истинно нейтральный', 'Хаотично-нейтральный',
+    'Законопослушно-злой', 'Нейтрально-злой', 'Хаотично-злой'];
+  const STANDARD_ARRAY = [15, 14, 13, 12, 10, 8];
+  const PROF = 2;   // бонус мастерства на 1 уровне
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const abilMod = (n) => Math.floor((Number(n) - 10) / 2);
+  const sign = (n) => (n >= 0 ? '+' : '') + n;
+
+  // каталог (классы/расы/предыстории) и by-id
+  let CAT = { classes: [], races: [], backgrounds: [] };
+  const byId = {};
+
+  // собираемый персонаж
+  const draft = {
+    name: '',
+    raceId: null, subraceId: null, classId: null, bgId: null,
+    alignment: '',
+    abilMethod: 'standard',
+    abilBase: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+    classSkills: [],            // выбранные классовые навыки
+    identity: { origin: '', personality: '', ideals: '', bonds: '', flaws: '', appearance: '' },
+    avatar: '',
+  };
+
+  // ===== вычисления канона =====
+  function raceBonuses() {
+    const r = byId[draft.raceId];
+    const b = {};
+    if (r) for (const [k, v] of Object.entries(r.abilityBonuses || {})) b[k] = (b[k] || 0) + v;
+    const sr = (r && r.subraces || []).find(s => s.id === draft.subraceId);
+    if (sr) for (const [k, v] of Object.entries(sr.abilityBonuses || {})) b[k] = (b[k] || 0) + v;
+    return b;
+  }
+  function finalAbilities() {
+    const bonus = raceBonuses();
+    const out = {};
+    for (const k of ABIL) out[k] = (Number(draft.abilBase[k]) || 0) + (bonus[k] || 0);
+    return out;
+  }
+  function bgSkills() { const b = byId[draft.bgId]; return b ? (b.skillProf || []) : []; }
+  function allProficientSkills() { return [...new Set([...bgSkills(), ...draft.classSkills])]; }
+
+  // ===== шаги =====
+  const steps = [
+    { key: 'race', title: 'Раса', render: renderRace, valid: () => !!draft.raceId && (!byId[draft.raceId]?.subraces || !!draft.subraceId) },
+    { key: 'class', title: 'Класс', render: renderClass, valid: () => !!draft.classId },
+    { key: 'bg', title: 'Предыстория', render: renderBg, valid: () => !!draft.bgId },
+    { key: 'abil', title: 'Характеристики', render: renderAbil, valid: () => true },
+    { key: 'skills', title: 'Навыки', render: renderSkills, valid: () => { const c = byId[draft.classId]; return !c || draft.classSkills.length === (c.skillChoices?.count || 0); } },
+    { key: 'identity', title: 'Происхождение', render: renderIdentity, valid: () => true },
+    { key: 'summary', title: 'Итог', render: renderSummary, valid: () => !!draft.name.trim() },
+  ];
+  let cur = 0;
+
+  function renderChips() {
+    document.getElementById('stepChips').innerHTML = steps.map((s, i) =>
+      `<div class="step-chip ${i === cur ? 'active' : ''} ${i < cur ? 'done' : ''}"><span class="n">${i < cur ? '✓' : i + 1}</span>${s.title}</div>`).join('');
+  }
+  function show() {
+    renderChips();
+    steps[cur].render(document.getElementById('stepPanel'));
+    document.getElementById('btnBack').disabled = cur === 0;
+    document.getElementById('btnNext').textContent = cur === steps.length - 1 ? '✓ Создать' : 'Далее';
+    document.getElementById('err').textContent = '';
+  }
+  document.getElementById('btnBack').onclick = () => { if (cur > 0) { cur--; show(); } };
+  document.getElementById('btnNext').onclick = () => {
+    if (!steps[cur].valid()) { document.getElementById('err').textContent = 'Заполните шаг, чтобы продолжить'; return; }
+    if (cur === steps.length - 1) { finish(); return; }
+    cur++; show();
+  };
+
+  // ---- ШАГ РАСА ----
+  function renderRace(el) {
+    const cards = CAT.races.map(r => `<div class="card ${draft.raceId === r.id ? 'sel' : ''}" data-id="${r.id}">
+      <div class="cn">${esc(r.nameLocal || r.name)}</div><div class="cd">скорость ${r.speed} фт · ${esc(r.size)}</div></div>`).join('');
+    let html = `<h2>Раса</h2><div class="sub">Раса даёт бонусы характеристик и черты (подставляются автоматически).</div><div class="cards">${cards}</div>`;
+    const r = byId[draft.raceId];
+    if (r) {
+      const bonus = Object.entries(r.abilityBonuses || {}).map(([k, v]) => `${ABIL_RU[k]} ${sign(v)}`).join(', ');
+      html += `<div class="detail"><b>Бонусы:</b> ${bonus || '—'} &nbsp; <b>Черты:</b> ${(r.traits || []).map(esc).join('; ')}`;
+      if (r.subraces && r.subraces.length) {
+        html += `<div style="margin-top:10px"><b>Подраса:</b><div class="cards" style="margin-top:6px">` +
+          r.subraces.map(s => `<div class="card ${draft.subraceId === s.id ? 'sel' : ''}" data-sub="${s.id}"><div class="cn">${esc(s.nameLocal || s.name)}</div>
+            <div class="cd">${Object.entries(s.abilityBonuses || {}).map(([k, v]) => ABIL_RU[k] + ' ' + sign(v)).join(', ')}</div></div>`).join('') + `</div></div>`;
+      }
+      html += `<div class="note">Канон — значения по умолчанию, характеристики поправите на шаге 4.</div></div>`;
+    }
+    el.innerHTML = html;
+    el.querySelectorAll('[data-id]').forEach(c => c.onclick = () => { draft.raceId = c.dataset.id; draft.subraceId = null; show(); });
+    el.querySelectorAll('[data-sub]').forEach(c => c.onclick = () => { draft.subraceId = c.dataset.sub; show(); });
+  }
+
+  // ---- ШАГ КЛАСС ----
+  function renderClass(el) {
+    const cards = CAT.classes.map(c => `<div class="card ${draft.classId === c.id ? 'sel' : ''}" data-id="${c.id}">
+      <div class="cn">${esc(c.nameLocal || c.name)}</div><div class="cd">d${c.hitDie} · ${ABIL_RU[c.primaryAbility] || c.primaryAbility}</div></div>`).join('');
+    let html = `<h2>Класс</h2><div class="sub">Класс задаёт кость хитов, спасброски и владения (автоматически).</div><div class="cards">${cards}</div>`;
+    const c = byId[draft.classId];
+    if (c) {
+      html += `<div class="detail"><b>Кость хитов:</b> d${c.hitDie} (старт HP ${c.startingHp} + мод. Тело) &nbsp;
+        <b>Спасброски:</b> ${(c.savingThrows || []).map(s => ABIL_RU[s]).join(', ')}<br>
+        <b>Броня:</b> ${(c.armorProf || []).join(', ') || '—'} &nbsp; <b>Оружие:</b> ${(c.weaponProf || []).join(', ') || '—'}<br>
+        <b>Навыки:</b> выбрать ${c.skillChoices?.count || 0} (на шаге 5)<div class="note">Можно изменить вручную позже.</div></div>`;
+    }
+    el.innerHTML = html;
+    el.querySelectorAll('[data-id]').forEach(x => x.onclick = () => { draft.classId = x.dataset.id; draft.classSkills = []; show(); });
+  }
+
+  // ---- ШАГ ПРЕДЫСТОРИЯ ----
+  function renderBg(el) {
+    const cards = CAT.backgrounds.map(b => `<div class="card ${draft.bgId === b.id ? 'sel' : ''}" data-id="${b.id}">
+      <div class="cn">${esc(b.nameLocal || b.name)}</div><div class="cd">${(b.skillProf || []).map(s => SKILL_RU[s] || s).join(', ')}</div></div>`).join('');
+    let html = `<h2>Предыстория</h2><div class="sub">Даёт владение навыками, инструменты и особенность.</div><div class="cards">${cards}</div>`;
+    const b = byId[draft.bgId];
+    if (b) {
+      html += `<div class="detail"><b>Навыки:</b> ${(b.skillProf || []).map(s => SKILL_RU[s] || s).join(', ')} &nbsp;
+        <b>Инструменты:</b> ${(b.tools || []).join(', ') || '—'} &nbsp; <b>Языки:</b> ${b.languages || 0}<br>
+        <b>${esc(b.feature?.name || '')}:</b> ${esc(b.feature?.desc || '')}</div>`;
+    }
+    el.innerHTML = html;
+    el.querySelectorAll('[data-id]').forEach(x => x.onclick = () => { draft.bgId = x.dataset.id; show(); });
+  }
+
+  // ---- ШАГ ХАРАКТЕРИСТИКИ ----
+  function renderAbil(el) {
+    const bonus = raceBonuses();
+    let html = `<h2>Характеристики</h2><div class="sub">Метод — подсказка канона; ручной ввод доступен всегда.</div>
+      <label>Метод</label>
+      <select id="abilMethod">
+        <option value="standard" ${draft.abilMethod === 'standard' ? 'selected' : ''}>Стандартный набор (15,14,13,12,10,8)</option>
+        <option value="pointbuy" ${draft.abilMethod === 'pointbuy' ? 'selected' : ''}>Покупка очков (27)</option>
+        <option value="manual" ${draft.abilMethod === 'manual' ? 'selected' : ''}>Ручной ввод</option>
+      </select>
+      <div id="pointInfo" class="note"></div>
+      <div class="abil-grid">`;
+    for (const k of ABIL) {
+      const base = draft.abilBase[k], tot = (Number(base) || 0) + (bonus[k] || 0);
+      let control;
+      if (draft.abilMethod === 'standard') {
+        control = `<select data-ab="${k}">` + STANDARD_ARRAY.map(v => `<option value="${v}" ${Number(base) === v ? 'selected' : ''}>${v}</option>`).join('') + `</select>`;
+      } else {
+        control = `<input type="number" data-ab="${k}" value="${base}" min="3" max="20">`;
+      }
+      html += `<div class="abil-box"><div class="lbl">${ABIL_RU[k]}</div>${control}
+        <div class="bonus">${bonus[k] ? 'раса ' + sign(bonus[k]) : '&nbsp;'}</div>
+        <div class="total">${tot}</div><div class="mod">${sign(abilMod(tot))}</div></div>`;
+    }
+    html += `</div>`;
+    el.innerHTML = html;
+    document.getElementById('abilMethod').onchange = (e) => {
+      draft.abilMethod = e.target.value;
+      if (draft.abilMethod === 'standard') ABIL.forEach((k, i) => draft.abilBase[k] = STANDARD_ARRAY[i]);
+      if (draft.abilMethod === 'pointbuy') ABIL.forEach(k => draft.abilBase[k] = 8);
+      show();
+    };
+    el.querySelectorAll('[data-ab]').forEach(inp => inp.onchange = () => {
+      draft.abilBase[inp.dataset.ab] = parseInt(inp.value, 10) || 0; show();
+    });
+    if (draft.abilMethod === 'pointbuy') {
+      const cost = (v) => ({ 8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9 }[v]);
+      let used = 0, bad = false;
+      for (const k of ABIL) { const v = Number(draft.abilBase[k]); const c = cost(v); if (c == null) bad = true; else used += c; }
+      document.getElementById('pointInfo').textContent = bad ? 'Покупка: допустимы значения 8–15' : `Потрачено очков: ${used} / 27`;
+    }
+  }
+
+  // ---- ШАГ НАВЫКИ ----
+  function renderSkills(el) {
+    const fin = finalAbilities();
+    const c = byId[draft.classId];
+    const fromList = c ? (c.skillChoices?.from || []) : [];
+    const limit = c ? (c.skillChoices?.count || 0) : 0;
+    const bg = bgSkills();
+    let html = `<h2>Навыки</h2><div class="sub">От предыстории — уже выбраны. Классовых выберите ${limit} из списка.</div>`;
+    html += `<label>От предыстории (владение)</label><div class="skill-list">` +
+      bg.map(s => `<div class="skill-item locked">✔ ${SKILL_RU[s] || s} <span class="mod">${sign(abilMod(fin[SKILL_ABILITY[s]]) + PROF)}</span></div>`).join('') + `</div>`;
+    html += `<label>Классовые навыки (выбрано ${draft.classSkills.length}/${limit})</label><div class="skill-list">` +
+      fromList.map(s => {
+        const checked = draft.classSkills.includes(s);
+        const fromBg = bg.includes(s);
+        const m = sign(abilMod(fin[SKILL_ABILITY[s]]) + ((checked || fromBg) ? PROF : 0));
+        return `<div class="skill-item"><input type="checkbox" data-sk="${s}" ${checked ? 'checked' : ''} ${fromBg ? 'disabled' : ''}> ${SKILL_RU[s] || s}${fromBg ? ' (предыстория)' : ''} <span class="mod">${m}</span></div>`;
+      }).join('') + `</div>`;
+    el.innerHTML = html;
+    el.querySelectorAll('[data-sk]').forEach(cb => cb.onchange = () => {
+      const s = cb.dataset.sk;
+      if (cb.checked) {
+        if (draft.classSkills.length >= limit) { cb.checked = false; return; }
+        draft.classSkills.push(s);
+      } else draft.classSkills = draft.classSkills.filter(x => x !== s);
+      show();
+    });
+  }
+
+  // ---- ШАГ ПРОИСХОЖДЕНИЕ И ФОТО ----
+  function renderIdentity(el) {
+    const id = draft.identity;
+    el.innerHTML = `<h2>Происхождение и фото</h2><div class="sub">Отыгрыш — всё опционально, не блокирует «Далее».</div>
+      <div class="avatar-row">
+        <div class="avatar-prev" id="avatarPrev" style="background-image:${draft.avatar ? `url(${draft.avatar})` : 'none'}"></div>
+        <div style="flex:1"><label>Фото персонажа</label><input type="file" id="avatarFile" accept="image/*">
+          <div class="note">Изображение сожмётся до 256px.</div>
+          <label>Мировоззрение</label><select id="alignment"><option value="">—</option>${ALIGNMENTS.map(a => `<option ${draft.alignment === a ? 'selected' : ''}>${a}</option>`).join('')}</select></div>
+      </div>
+      <label>Происхождение / история</label><textarea id="f-origin" style="min-height:90px">${esc(id.origin)}</textarea>
+      <div class="row"><div><label>Черты характера</label><textarea id="f-personality">${esc(id.personality)}</textarea></div>
+        <div><label>Идеалы</label><textarea id="f-ideals">${esc(id.ideals)}</textarea></div></div>
+      <div class="row"><div><label>Привязанности</label><textarea id="f-bonds">${esc(id.bonds)}</textarea></div>
+        <div><label>Слабости</label><textarea id="f-flaws">${esc(id.flaws)}</textarea></div></div>
+      <label>Внешность</label><textarea id="f-appearance">${esc(id.appearance)}</textarea>`;
+    const bind = (fid, key) => document.getElementById(fid).oninput = (e) => id[key] = e.target.value;
+    bind('f-origin', 'origin'); bind('f-personality', 'personality'); bind('f-ideals', 'ideals');
+    bind('f-bonds', 'bonds'); bind('f-flaws', 'flaws'); bind('f-appearance', 'appearance');
+    document.getElementById('alignment').onchange = (e) => draft.alignment = e.target.value;
+    document.getElementById('avatarFile').onchange = (e) => loadAvatar(e.target.files[0]);
+  }
+  function loadAvatar(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const S = 256, scale = Math.min(1, S / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        draft.avatar = cv.toDataURL('image/jpeg', 0.8);
+        document.getElementById('avatarPrev').style.backgroundImage = `url(${draft.avatar})`;
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // ---- ШАГ ИТОГ ----
+  function renderSummary(el) {
+    const ch = buildCharacter();
+    const m = ch.meta, d = ch.derived;
+    el.innerHTML = `<h2>Итог</h2><div class="sub">Проверьте и дайте имя. Канон собран — поля можно было править на шагах.</div>
+      <label>Имя персонажа</label><input id="charName" value="${esc(draft.name)}" placeholder="Как зовут героя?">
+      <div class="detail">
+        <div class="summary-row"><span><b>Раса:</b> ${esc(m.race)}${m.subrace ? ' / ' + esc(subName(m.subrace)) : ''}</span>
+          <span><b>Класс:</b> ${esc(m.class)}</span><span><b>Предыстория:</b> ${esc(bgName(m.background))}</span></div>
+        <div class="summary-row"><span><b>КД:</b> ${d.ac}</span><span><b>Хиты:</b> ${d.hp.max}</span>
+          <span><b>Скорость:</b> ${d.speed} фт</span><span><b>Инициатива:</b> ${sign(d.initiative)}</span>
+          <span><b>Бонус мастерства:</b> ${sign(ch.proficiencyBonus)}</span></div>
+        <div class="summary-row">${ABIL.map(k => `<span><b>${ABIL_RU[k]}</b> ${ch.abilities[k]} (${sign(abilMod(ch.abilities[k]))})</span>`).join('')}</div>
+        <div class="summary-row"><b>Спасброски:</b> ${ch.savingThrows.map(s => ABIL_RU[s]).join(', ')}</div>
+        <div class="summary-row"><b>Владение навыками:</b> ${ch.skills.filter(s => s.proficient).map(s => SKILL_RU[s.name] || s.name).join(', ') || '—'}</div>
+      </div>`;
+    document.getElementById('charName').oninput = (e) => draft.name = e.target.value;
+  }
+  function subName(sid) { for (const r of CAT.races) { const s = (r.subraces || []).find(x => x.id === sid); if (s) return s.nameLocal || s.name; } return sid; }
+  function bgName(bid) { const b = byId[bid]; return b ? (b.nameLocal || b.name) : bid; }
+
+  // ===== сборка персонажа по character-schema =====
+  function buildCharacter() {
+    const fin = finalAbilities();
+    const c = byId[draft.classId], r = byId[draft.raceId];
+    const prof = allProficientSkills();
+    const skills = Object.keys(SKILL_ABILITY).map(name => {
+      const ability = SKILL_ABILITY[name];
+      const isProf = prof.includes(name);
+      return { id: 'skill_' + name.toLowerCase().replace(/\s+/g, '_'), name, ability, proficient: isProf,
+        roll: { notation: '1d20', modifier: abilMod(fin[ability]) + (isProf ? PROF : 0), type: 'check' } };
+    });
+    const conMod = abilMod(fin.con), dexMod = abilMod(fin.dex);
+    const hpMax = (c ? c.startingHp : 8) + conMod;
+    return {
+      name: draft.name.trim() || (r ? (r.nameLocal || r.name) : 'Герой'),
+      system: 'dnd5e',
+      meta: {
+        class: c ? (c.nameLocal || c.name) : '', level: 1,
+        race: r ? (r.nameLocal || r.name) : '', subrace: draft.subraceId || '',
+        background: draft.bgId || '', alignment: draft.alignment || '',
+        avatar: draft.avatar || '', owner,
+      },
+      abilities: fin,
+      proficiencyBonus: PROF,
+      savingThrows: c ? (c.savingThrows || []) : [],
+      identity: { ...draft.identity },
+      derived: { ac: 10 + dexMod, hp: { current: hpMax, max: hpMax, temp: 0 }, speed: r ? r.speed : 30, initiative: dexMod },
+      skills,
+      actions: [],
+      resources: { spellSlots: {}, custom: [] },
+      hotbar: Array.from({ length: 16 }, (_, i) => ({ slot: i, ref: null })),
+    };
+  }
+
+  async function finish() {
+    if (!draft.name.trim()) { document.getElementById('err').textContent = 'Введите имя персонажа'; return; }
+    document.getElementById('btnNext').disabled = true;
+    try {
+      const res = await fetch(`/api/games/${encodeURIComponent(room)}/characters`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: buildCharacter(), ownerId: owner }),
+      });
+      if (!res.ok) throw new Error('http ' + res.status);
+      location.href = 'seats.html?room=' + encodeURIComponent(room);   // назад к выбору места
+    } catch (e) {
+      document.getElementById('err').textContent = 'Не удалось сохранить персонажа';
+      document.getElementById('btnNext').disabled = false;
+    }
+  }
+
+  // ===== старт: тянем каталог, потом визард =====
+  fetch('/api/catalog').then(r => r.json()).then(cat => {
+    CAT = { classes: cat.classes || [], races: cat.races || [], backgrounds: cat.backgrounds || [] };
+    [...CAT.classes, ...CAT.races, ...CAT.backgrounds].forEach(x => { byId[x.id] = x; });
+    if (draft.abilMethod === 'standard') ABIL.forEach((k, i) => draft.abilBase[k] = STANDARD_ARRAY[i]);
+    show();
+  }).catch(() => { document.getElementById('stepPanel').innerHTML = '<h2>Каталог недоступен</h2>'; });
+</script>
+</body>
+</html>

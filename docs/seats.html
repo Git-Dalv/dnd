@@ -111,8 +111,9 @@
     <select id="charSelect"></select>
     <div class="hint" id="charHint"></div>
     <div class="row" style="margin-top:12px;">
-      <div><button class="btn btn-ghost" id="newCharBtn">＋ Создать нового</button></div>
+      <div><button class="btn btn-primary" id="wizardBtn">⚜ Мастер создания</button></div>
       <div><button class="btn btn-ghost" id="importBtn">⭳ Импорт из JSON</button></div>
+      <div><button class="btn btn-ghost" id="newCharBtn">Ручной режим</button></div>
     </div>
     <input type="file" id="importFile" accept="application/json,.json" style="display:none">
     <div class="err" id="seatErr"></div>
@@ -328,6 +329,10 @@
   const charModal = document.getElementById('charModal');
   const charErr = document.getElementById('charErr');
   document.getElementById('newCharBtn').onclick = () => { charErr.textContent = ''; charModal.classList.add('show'); };
+  // основной путь — пошаговый мастер создания по канону (передаём комнату и владельца)
+  document.getElementById('wizardBtn').onclick = () => {
+    location.href = 'creator.html?room=' + encodeURIComponent(room) + '&owner=' + encodeURIComponent(genMember());
+  };
   document.getElementById('charCancel').onclick = () => charModal.classList.remove('show');
 
   function numVal(id, def) { const v = parseInt(document.getElementById(id).value, 10); return isNaN(v) ? def : v; }
