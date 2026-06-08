@@ -840,6 +840,15 @@ def api_list_characters(room_id: str):
     return db.list_characters(room_id)
 
 
+@app.get("/api/games/{room_id}/characters/{char_id}")
+def api_get_character(room_id: str, char_id: str):
+    # полный персонаж по id (бестиарий: поставить токен с его статблоком)
+    ch = db.get_character(char_id)
+    if ch is None:
+        raise HTTPException(status_code=404, detail="character not found")
+    return ch
+
+
 @app.post("/api/games/{room_id}/characters")
 def api_create_character(room_id: str, payload: dict):
     # data — объект по character-schema.json; и форма, и импорт JSON дают один и тот же data
