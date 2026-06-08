@@ -3,15 +3,30 @@
   "id": "char_a1b2",
   "name": "Лиэндра",
   "system": "dnd5e",
+  "_comment_meta": "background — id предыстории из каталога, subrace — id подрасы (если есть), alignment — мировоззрение (опц.). avatar — ФОТО: путь к файлу ИЛИ data URL (base64) загруженного изображения (мастер создания сжимает фото до ~256px, чтобы блоб не раздувался).",
   "meta": {
     "class": "Wizard",
     "level": 5,
     "race": "High Elf",
+    "subrace": "subrace_high_elf",
+    "background": "bg_acolyte",
+    "alignment": "Нейтрально-добрый",
     "avatar": "assets/leandra.png",
     "owner": "player_vlad"
   },
   "abilities": { "str": 8, "dex": 14, "con": 13, "int": 18, "wis": 12, "cha": 10 },
   "proficiencyBonus": 3,
+  "_comment_savingThrows": "Характеристики, в спасбросках которых есть владение (из класса). Бонус = мод. характеристики + бонус мастерства.",
+  "savingThrows": ["int", "wis"],
+  "_comment_identity": "Происхождение/отыгрыш — свободные тексты (не влияют на механику). Канонические 4 поля 5e: personality/ideals/bonds/flaws.",
+  "identity": {
+    "origin": "Выросла в библиотеке Глубоководья, ученица архимага.",
+    "personality": "Любопытна и педантична.",
+    "ideals": "Знание — высшая ценность.",
+    "bonds": "Должна вернуть украденный том.",
+    "flaws": "Не умеет отступать перед загадкой.",
+    "appearance": "Высокая эльфийка с серебряными волосами."
+  },
   "derived": {
     "ac": 13,
     "hp": { "current": 22, "max": 27, "temp": 0 },
