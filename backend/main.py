@@ -98,6 +98,13 @@ class Room:
         return [m.member_id for m in self.members.values() if m.role == "gm"]
 
 
+def require_gm(member: "Member | None") -> bool:
+    """Признак прав мастера для соединения. DM-команды этапов 1–4 будут
+    вызывать это ДО действия (проверка прав на сервере, не на клиенте).
+    Сейчас источник роли — роль соединения (из лобби: место 0 = gm)."""
+    return bool(member) and member.role == "gm"
+
+
 rooms: dict[str, Room] = {}
 
 
