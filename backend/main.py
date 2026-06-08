@@ -112,7 +112,8 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     role = ws.query_params.get("role", "player")
     name = ws.query_params.get("name", member_id)
     room = get_room(room_id)
-    room.members[member_id] = Member(member_id, name, role, ws)
+    member = Member(member_id, name, role, ws)
+    room.members[member_id] = member
 
     await room.broadcast({"type": "member.connection", "memberId": member_id, "connected": True})
     # новому участнику — хвост журнала, чтобы догнал состояние
@@ -126,10 +127,13 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
             msg = json.loads(raw)
             await handle(room, member_id, role, msg)
     except WebSocketDisconnect:
-        room.members.pop(member_id, None)
-        db.free_seat(room_id, member_id)   # освобождаем место (событие уровня сессии)
-        await room.broadcast({"type": "member.connection", "memberId": member_id, "connected": False})
-        await room.broadcast({"type": "seat.updated", "seats": db.list_seats(room_id)})
+        # если этот member_id уже ПЕРЕПОДКЛЮЧИЛСЯ (новый ws заменил наш в members),
+        # старый дисконнект не должен трогать чужое подключение/его место.
+        if room.members.get(member_id) is member:
+            room.members.pop(member_id, None)
+            db.free_seat(room_id, member_id)   # освобождаем место (событие уровня сессии)
+            await room.broadcast({"type": "member.connection", "memberId": member_id, "connected": False})
+            await room.broadcast({"type": "seat.updated", "seats": db.list_seats(room_id)})
 
 
 async def handle(room: Room, member_id: str, role: str, msg: dict):

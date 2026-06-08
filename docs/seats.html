@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VTT — Выбор места</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+
+  :root {
+    --bg: #14110d; --panel: #1f1a13; --panel-2: #2a2319; --edge: #3d3324;
+    --edge-bright: #5a4a30; --ink: #e8ddc7; --ink-dim: #a89878; --gold: #c9a253;
+    --gold-bright: #e8c878; --blood: #8a2e22; --green: #4a7a3a; --shadow: rgba(0,0,0,.55);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Spectral', serif; background: var(--bg); color: var(--ink); min-height: 100vh;
+    background-image:
+      radial-gradient(circle at 15% 10%, rgba(201,162,83,.05), transparent 40%),
+      radial-gradient(circle at 90% 90%, rgba(138,46,34,.06), transparent 45%); }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 36px 24px 64px; }
+  a.back { color: var(--ink-dim); font-size: 13px; text-decoration: none; }
+  a.back:hover { color: var(--gold); }
+
+  header { text-align: center; margin: 14px 0 24px; }
+  h1 { font-family: 'Cinzel', serif; font-weight: 700; font-size: 26px; color: var(--gold-bright); letter-spacing: .06em; }
+  .room-code { font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: .06em; color: var(--gold);
+    background: rgba(201,162,83,.08); border: 1px solid var(--edge-bright); border-radius: 4px; padding: 4px 9px; display: inline-block; margin-top: 8px; }
+
+  .who { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--edge);
+    border-radius: 7px; padding: 12px 14px; margin-bottom: 24px; display: flex; align-items: center; gap: 10px; }
+  .who label { font-family: 'Cinzel'; font-size: 12px; color: var(--ink-dim); letter-spacing: .04em; }
+  .who input { flex: 1; background: var(--bg); border: 1px solid var(--edge-bright); border-radius: 5px;
+    color: var(--ink); font-family: 'Spectral'; font-size: 15px; padding: 9px 11px; }
+  .who input:focus { outline: none; border-color: var(--gold); }
+
+  .seats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 12px; }
+  .seat { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--edge);
+    border-radius: 8px; padding: 14px; min-height: 130px; display: flex; flex-direction: column; box-shadow: 0 2px 6px var(--shadow); }
+  .seat.dm { border-color: var(--gold); box-shadow: 0 2px 10px rgba(201,162,83,.25); }
+  .seat.disabled { opacity: .7; }
+  .seat-head { font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: .04em; color: var(--ink);
+    border-bottom: 1px solid var(--edge); padding-bottom: 8px; margin-bottom: 10px; }
+  .seat.dm .seat-head { color: var(--gold-bright); }
+  .seat-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+  .seat-occupant { font-size: 14px; color: var(--ink); }
+  .seat-status { font-size: 11px; color: var(--ink-dim); font-style: italic; text-transform: uppercase; letter-spacing: .06em; }
+
+  .btn { font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: .03em; padding: 9px 12px; border-radius: 5px;
+    cursor: pointer; border: none; transition: all .15s; width: 100%; }
+  .btn-primary { background: var(--gold); color: #1a140a; }
+  .btn-primary:hover { background: var(--gold-bright); }
+  .btn-gold { background: linear-gradient(180deg, #d8b25e, var(--gold)); color: #1a140a; }
+  .btn-gold:hover { background: var(--gold-bright); }
+  .btn-ghost { background: transparent; color: var(--ink-dim); border: 1px solid var(--edge-bright); }
+  .btn-ghost:hover { color: var(--ink); border-color: var(--gold); }
+  .btn:disabled { opacity: .45; cursor: default; }
+
+  /* modal */
+  .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.65); display: none; align-items: center;
+    justify-content: center; z-index: 100; padding: 20px; }
+  .modal-back.show { display: flex; }
+  .modal { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--gold);
+    border-radius: 9px; padding: 20px 22px; width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto;
+    box-shadow: 0 14px 44px rgba(0,0,0,.8); }
+  .modal h3 { font-family: 'Cinzel'; color: var(--gold-bright); font-size: 16px; margin-bottom: 14px; }
+  .modal label { display: block; font-size: 11px; color: var(--ink-dim); text-transform: uppercase;
+    letter-spacing: .05em; margin: 10px 0 4px; }
+  .modal input, .modal select, .modal textarea { width: 100%; background: var(--bg); border: 1px solid var(--edge-bright);
+    border-radius: 5px; color: var(--ink); font-family: 'Spectral'; font-size: 14px; padding: 8px 10px; }
+  .modal input:focus, .modal select:focus, .modal textarea:focus { outline: none; border-color: var(--gold); }
+  .modal textarea { font-family: monospace; font-size: 12px; min-height: 56px; resize: vertical; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  .grid6 { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+  .grid6 input { text-align: center; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+  .modal-actions .btn { width: auto; }
+  details { margin-top: 12px; border: 1px solid var(--edge); border-radius: 6px; padding: 8px 10px; }
+  details summary { cursor: pointer; font-family: 'Cinzel'; font-size: 12px; color: var(--ink-dim); }
+  .hint { font-size: 12px; color: var(--ink-dim); font-style: italic; margin-top: 6px; }
+  .err { color: #d98a7a; font-size: 13px; min-height: 16px; margin-top: 8px; }
+
+  /* denied banner */
+  .banner { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 200;
+    background: var(--blood); color: #fff; font-size: 13px; padding: 9px 16px; border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.6); display: none; }
+  .banner.show { display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="lobby.html">← к списку игр</a>
+  <header>
+    <h1 id="gameTitle">Выбор места</h1>
+    <div class="room-code" id="roomCode"></div>
+  </header>
+
+  <div class="who">
+    <label for="playerName">Ваше имя</label>
+    <input id="playerName" type="text" placeholder="Как вас зовут за столом?" value="Гость" autocomplete="off">
+  </div>
+
+  <div class="seats-grid" id="seatsGrid"></div>
+</div>
+
+<!-- seat modal: выбрать персонажа / создать / импорт -->
+<div class="modal-back" id="seatModal">
+  <div class="modal">
+    <h3 id="seatModalTitle">Занять место</h3>
+    <label for="charSelect">Персонаж</label>
+    <select id="charSelect"></select>
+    <div class="hint" id="charHint"></div>
+    <div class="row" style="margin-top:12px;">
+      <div><button class="btn btn-ghost" id="newCharBtn">＋ Создать нового</button></div>
+      <div><button class="btn btn-ghost" id="importBtn">⭳ Импорт из JSON</button></div>
+    </div>
+    <input type="file" id="importFile" accept="application/json,.json" style="display:none">
+    <div class="err" id="seatErr"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="seatCancel">Отмена</button>
+      <button class="btn btn-primary" id="seatConfirm">Занять место</button>
+    </div>
+  </div>
+</div>
+
+<!-- character create modal -->
+<div class="modal-back" id="charModal">
+  <div class="modal">
+    <h3>Новый персонаж</h3>
+    <label>Имя</label>
+    <input id="cf-name" type="text" placeholder="Лиэндра">
+    <div class="row">
+      <div><label>Класс</label><input id="cf-class" type="text" placeholder="Wizard"></div>
+      <div><label>Уровень</label><input id="cf-level" type="number" value="1"></div>
+      <div><label>Раса</label><input id="cf-race" type="text" placeholder="High Elf"></div>
+    </div>
+    <label>Характеристики (Сила, Ловк, Тело, Инт, Мудр, Хар)</label>
+    <div class="grid6">
+      <input id="cf-str" type="number" value="10" title="Сила">
+      <input id="cf-dex" type="number" value="10" title="Ловкость">
+      <input id="cf-con" type="number" value="10" title="Телосложение">
+      <input id="cf-int" type="number" value="10" title="Интеллект">
+      <input id="cf-wis" type="number" value="10" title="Мудрость">
+      <input id="cf-cha" type="number" value="10" title="Харизма">
+    </div>
+    <div class="row">
+      <div><label>КД</label><input id="cf-ac" type="number" value="10"></div>
+      <div><label>Хиты тек.</label><input id="cf-hpcur" type="number" value="10"></div>
+      <div><label>Хиты макс.</label><input id="cf-hpmax" type="number" value="10"></div>
+    </div>
+    <div class="row">
+      <div><label>Скорость</label><input id="cf-speed" type="number" value="30"></div>
+      <div><label>Инициатива</label><input id="cf-init" type="number" value="0"></div>
+      <div><label>Бонус мастерства</label><input id="cf-prof" type="number" value="2"></div>
+    </div>
+    <details>
+      <summary>Продвинутое: навыки, действия, ячейки (JSON по схеме)</summary>
+      <label>Навыки (skills[])</label>
+      <textarea id="cf-skills">[]</textarea>
+      <label>Действия (actions[])</label>
+      <textarea id="cf-actions">[]</textarea>
+      <label>Ячейки заклинаний (resources.spellSlots)</label>
+      <textarea id="cf-slots">{}</textarea>
+    </details>
+    <div class="err" id="charErr"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="charCancel">Отмена</button>
+      <button class="btn btn-primary" id="charSave">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<div class="banner" id="banner"></div>
+
+<script>
+  // Экран выбора места. HTTP (/api/*) для списков; WS — только чтобы занять
+  // место (seat.take) и слушать seat.updated/seat.denied. Лимит/занятость
+  // НЕ проверяем жёстко на клиенте — рисуем по seat.updated, отказ ловим из
+  // seat.denied. room_id берём из query (?room=...).
+  const params = new URLSearchParams(location.search);
+  const room = params.get('room') || '';
+  const wsScheme = (location.protocol === 'https:') ? 'wss' : 'ws';
+
+  const nameInput = document.getElementById('playerName');
+  const seatsGrid = document.getElementById('seatsGrid');
+  const banner = document.getElementById('banner');
+
+  let seats = [];
+  let characters = [];
+  let charById = {};
+  let myMemberId = null;
+  let ws = null, wsRole = null, wsName = null;
+  let pendingTake = null;        // {seatNo, role, charId, name}
+  let activeSeatNo = null;       // место, для которого открыт seat modal
+
+  function genMember() {
+    if (!myMemberId) myMemberId = 'm_' + Math.random().toString(36).slice(2, 9);
+    return myMemberId;
+  }
+
+  function showBanner(text) {
+    banner.textContent = text;
+    banner.classList.add('show');
+    clearTimeout(showBanner._t);
+    showBanner._t = setTimeout(() => banner.classList.remove('show'), 3500);
+  }
+
+  const DENY_REASON = {
+    taken: 'Место уже занято',
+    gm_only: 'На это место садится только мастер',
+    gm_seat_only: 'Мастер садится только на место мастера',
+    bad_seat: 'Неверное место',
+    connection: 'Не удалось подключиться к комнате',
+  };
+
+  // ---- данные ------------------------------------------------------------
+
+  async function loadSeats() {
+    const res = await fetch(`/api/games/${encodeURIComponent(room)}/seats`);
+    seats = await res.json();
+    renderSeats();
+  }
+
+  async function loadCharacters() {
+    const res = await fetch(`/api/games/${encodeURIComponent(room)}/characters`);
+    characters = await res.json();
+    charById = {};
+    for (const c of characters) charById[c.charId] = c;
+  }
+
+  // ---- отрисовка мест ----------------------------------------------------
+
+  function renderSeats() {
+    seatsGrid.innerHTML = '';
+    if (!seats.length) {
+      seatsGrid.innerHTML = '<div class="seat" style="grid-column:1/-1"><div class="seat-body">Игра не найдена. <a class="back" href="lobby.html">Вернуться в лобби</a></div></div>';
+      return;
+    }
+    for (const s of seats) {
+      const card = document.createElement('div');
+      card.className = 'seat' + (s.seatNo === 0 ? ' dm' : '') + (s.memberId ? ' disabled' : '');
+
+      const head = document.createElement('div');
+      head.className = 'seat-head';
+      head.textContent = s.seatNo === 0 ? '⚜ Мастер (DM)' : ('Игрок ' + s.seatNo);
+      card.appendChild(head);
+
+      const body = document.createElement('div');
+      body.className = 'seat-body';
+
+      if (s.memberId) {
+        const occ = document.createElement('div');
+        occ.className = 'seat-occupant';
+        const charName = s.charId && charById[s.charId] ? charById[s.charId].name : null;
+        occ.textContent = '👤 ' + (charName || s.memberId);
+        const st = document.createElement('div');
+        st.className = 'seat-status';
+        st.textContent = 'занято';
+        body.appendChild(occ); body.appendChild(st);
+      } else if (s.seatNo === 0) {
+        const b = document.createElement('button');
+        b.className = 'btn btn-gold';
+        b.textContent = 'Занять как мастер';
+        b.onclick = () => takeSeat(0, null);
+        body.appendChild(b);
+      } else {
+        const b = document.createElement('button');
+        b.className = 'btn btn-primary';
+        b.textContent = 'Выбрать персонажа';
+        b.onclick = () => openSeatModal(s.seatNo);
+        body.appendChild(b);
+      }
+      card.appendChild(body);
+      seatsGrid.appendChild(card);
+    }
+  }
+
+  // ---- seat modal --------------------------------------------------------
+
+  const seatModal = document.getElementById('seatModal');
+  const charSelect = document.getElementById('charSelect');
+  const charHint = document.getElementById('charHint');
+  const seatConfirm = document.getElementById('seatConfirm');
+  const seatErr = document.getElementById('seatErr');
+
+  function refreshCharSelect(selectId) {
+    charSelect.innerHTML = '';
+    if (!characters.length) {
+      const o = document.createElement('option');
+      o.value = ''; o.textContent = '— нет персонажей —';
+      charSelect.appendChild(o);
+      charSelect.disabled = true;
+      seatConfirm.disabled = true;
+      charHint.textContent = 'Создайте нового или импортируйте из JSON';
+    } else {
+      charSelect.disabled = false;
+      seatConfirm.disabled = false;
+      charHint.textContent = '';
+      for (const c of characters) {
+        const o = document.createElement('option');
+        o.value = c.charId;
+        o.textContent = c.name + (c.class ? ` · ${c.class} ${c.level || ''}`.trimEnd() : '');
+        charSelect.appendChild(o);
+      }
+      if (selectId) charSelect.value = selectId;
+    }
+  }
+
+  function openSeatModal(seatNo) {
+    if (!requireName()) return;
+    activeSeatNo = seatNo;
+    document.getElementById('seatModalTitle').textContent = 'Занять место — Игрок ' + seatNo;
+    seatErr.textContent = '';
+    refreshCharSelect();
+    seatModal.classList.add('show');
+  }
+  function closeSeatModal() { seatModal.classList.remove('show'); activeSeatNo = null; }
+
+  document.getElementById('seatCancel').onclick = closeSeatModal;
+  seatConfirm.onclick = () => {
+    const charId = charSelect.value;
+    if (!charId) { seatErr.textContent = 'Выберите персонажа'; return; }
+    takeSeat(activeSeatNo, charId);
+  };
+
+  // ---- создание персонажа ------------------------------------------------
+
+  const charModal = document.getElementById('charModal');
+  const charErr = document.getElementById('charErr');
+  document.getElementById('newCharBtn').onclick = () => { charErr.textContent = ''; charModal.classList.add('show'); };
+  document.getElementById('charCancel').onclick = () => charModal.classList.remove('show');
+
+  function numVal(id, def) { const v = parseInt(document.getElementById(id).value, 10); return isNaN(v) ? def : v; }
+
+  function buildCharacter() {
+    const name = document.getElementById('cf-name').value.trim();
+    if (!name) throw new Error('Имя обязательно');
+    let skills = [], actions = [], spellSlots = {};
+    const parse = (id, label, fallback) => {
+      const raw = document.getElementById(id).value.trim();
+      if (!raw) return fallback;
+      try { return JSON.parse(raw); } catch (e) { throw new Error(label + ': некорректный JSON'); }
+    };
+    skills = parse('cf-skills', 'Навыки', []);
+    actions = parse('cf-actions', 'Действия', []);
+    spellSlots = parse('cf-slots', 'Ячейки', {});
+    return {
+      name, system: 'dnd5e',
+      meta: {
+        class: document.getElementById('cf-class').value.trim(),
+        level: numVal('cf-level', 1),
+        race: document.getElementById('cf-race').value.trim(),
+        avatar: '', owner: genMember(),
+      },
+      abilities: {
+        str: numVal('cf-str', 10), dex: numVal('cf-dex', 10), con: numVal('cf-con', 10),
+        int: numVal('cf-int', 10), wis: numVal('cf-wis', 10), cha: numVal('cf-cha', 10),
+      },
+      proficiencyBonus: numVal('cf-prof', 2),
+      derived: {
+        ac: numVal('cf-ac', 10),
+        hp: { current: numVal('cf-hpcur', 1), max: numVal('cf-hpmax', 1), temp: 0 },
+        speed: numVal('cf-speed', 30), initiative: numVal('cf-init', 0),
+      },
+      skills, actions,
+      resources: { spellSlots, custom: [] },
+    };
+  }
+
+  document.getElementById('charSave').onclick = async () => {
+    charErr.textContent = '';
+    let data;
+    try { data = buildCharacter(); } catch (e) { charErr.textContent = e.message; return; }
+    try {
+      const charId = await postCharacter(data);
+      charModal.classList.remove('show');
+      refreshCharSelect(charId);     // выбрать только что созданного
+    } catch (e) { charErr.textContent = 'Не удалось сохранить персонажа'; }
+  };
+
+  // ---- импорт JSON -------------------------------------------------------
+
+  const importFile = document.getElementById('importFile');
+  document.getElementById('importBtn').onclick = () => importFile.click();
+  importFile.onchange = async () => {
+    seatErr.textContent = '';
+    const file = importFile.files[0];
+    if (!file) return;
+    let obj;
+    try { obj = JSON.parse(await file.text()); }
+    catch (e) { seatErr.textContent = 'Файл не является корректным JSON'; importFile.value = ''; return; }
+    const bad = validateCharacter(obj);
+    if (bad) { seatErr.textContent = 'Не похоже на персонажа: ' + bad; importFile.value = ''; return; }
+    try {
+      const charId = await postCharacter(obj);
+      refreshCharSelect(charId);
+      charHint.textContent = 'Импортирован: ' + (obj.name || charId);
+    } catch (e) { seatErr.textContent = 'Не удалось сохранить импортированного персонажа'; }
+    importFile.value = '';
+  };
+
+  function validateCharacter(obj) {
+    if (!obj || typeof obj !== 'object') return 'не объект';
+    if (typeof obj.name !== 'string' || !obj.name) return 'нет поля name';
+    if (!obj.abilities || typeof obj.abilities !== 'object') return 'нет abilities';
+    for (const k of ['str', 'dex', 'con', 'int', 'wis', 'cha']) {
+      if (typeof obj.abilities[k] !== 'number') return 'abilities.' + k + ' не число';
+    }
+    return null;
+  }
+
+  async function postCharacter(data) {
+    const res = await fetch(`/api/games/${encodeURIComponent(room)}/characters`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data, ownerId: genMember() }),
+    });
+    if (!res.ok) throw new Error('http ' + res.status);
+    const out = await res.json();
+    await loadCharacters();
+    return out.charId;
+  }
+
+  // ---- WS: занять место --------------------------------------------------
+
+  function requireName() {
+    const n = nameInput.value.trim();
+    if (!n) { showBanner('Сначала введите ваше имя'); nameInput.focus(); return false; }
+    return true;
+  }
+
+  function openWs(role) {
+    return new Promise((resolve, reject) => {
+      const name = nameInput.value.trim() || 'Гость';
+      if (ws && ws.readyState === WebSocket.OPEN && wsRole === role && wsName === name) { resolve(); return; }
+      if (ws) { ws.onclose = null; ws.onmessage = null; try { ws.close(); } catch (e) {} }
+      genMember(); wsRole = role; wsName = name;
+      const url = `${wsScheme}://${location.host}/ws/${encodeURIComponent(room)}/${encodeURIComponent(myMemberId)}`
+        + `?role=${role}&name=${encodeURIComponent(name)}`;
+      ws = new WebSocket(url);
+      ws.onmessage = onWsMessage;
+      ws.onopen = () => resolve();
+      ws.onerror = () => reject(new Error('ws error'));
+    });
+  }
+
+  function onWsMessage(ev) {
+    let msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
+    if (msg.type === 'seat.updated') {
+      seats = msg.seats; renderSeats();
+      if (pendingTake) {
+        const s = seats.find(x => x.seatNo === pendingTake.seatNo);
+        if (s && s.memberId === myMemberId) goToTable(pendingTake);   // наш захват подтверждён
+      }
+    } else if (msg.type === 'seat.denied') {
+      const reason = DENY_REASON[msg.reason] || msg.reason || 'Отказано';
+      pendingTake = null;
+      seatErr.textContent = reason;
+      showBanner(reason);
+    }
+  }
+
+  async function takeSeat(seatNo, charId) {
+    if (!requireName()) return;
+    const role = seatNo === 0 ? 'gm' : 'player';
+    try { await openWs(role); }
+    catch (e) { showBanner(DENY_REASON.connection); return; }
+    pendingTake = { seatNo, role, charId: charId || null, name: nameInput.value.trim() || 'Гость' };
+    ws.send(JSON.stringify({ type: 'seat.take', seatNo, charId: charId || null }));
+  }
+
+  function goToTable(t) {
+    const q = new URLSearchParams({ room, member: myMemberId, role: t.role, name: t.name });
+    if (t.charId) q.set('char', t.charId);
+    if (ws) { ws.onclose = null; ws.onmessage = null; try { ws.close(); } catch (e) {} }
+    location.href = 'prototype.html?' + q.toString();
+  }
+
+  // ---- старт -------------------------------------------------------------
+
+  async function init() {
+    if (!room) {
+      document.getElementById('gameTitle').textContent = 'Игра не указана';
+      seatsGrid.innerHTML = '<div class="seat" style="grid-column:1/-1"><div class="seat-body">Нет room_id. <a class="back" href="lobby.html">Вернуться в лобби</a></div></div>';
+      return;
+    }
+    document.getElementById('roomCode').textContent = 'Комната: ' + room;
+    // имя игры — из общего списка (лёгкий способ без отдельного эндпоинта)
+    try {
+      const games = await (await fetch('/api/games')).json();
+      const g = games.find(x => x.roomId === room);
+      if (g) document.getElementById('gameTitle').textContent = g.name;
+    } catch (e) {}
+    await loadCharacters();
+    await loadSeats();
+    // наблюдатель: подключаемся, чтобы ловить seat.updated в реальном времени
+    openWs('player').catch(() => {});
+  }
+
+  init();
+</script>
+</body>
+</html>
