@@ -74,13 +74,17 @@
     background: radial-gradient(ellipse at 45% 40%, #2c2519, #16130d 80%);
     box-shadow: inset 0 0 80px rgba(0,0,0,.6);
   }
-  /* viewport обрезает; world двигается/масштабируется внутри (локальный вид клиента) */
-  .map-viewport { position: absolute; inset: 0; overflow: hidden; cursor: grab; }
-  .map-viewport.dragging { cursor: grabbing; }
-  .map-world { position: absolute; top: 0; left: 0; width: 3000px; height: 2000px; transform-origin: 0 0;
+  /* viewport обрезает; сетка живёт ЗДЕСЬ (неподвижный слой) и тайлится на весь
+     экран — её шаг/сдвиг синхронит apply() из GRID и view, поэтому она не
+     обрывается на зуме/пане и совпадает с токенами. */
+  .map-viewport { position: absolute; inset: 0; overflow: hidden; cursor: grab;
+    background-color: #16130d;
     background-image:
-      repeating-linear-gradient(0deg, transparent, transparent calc(var(--grid) - 1px), rgba(201,162,83,.08) var(--grid)),
-      repeating-linear-gradient(90deg, transparent, transparent calc(var(--grid) - 1px), rgba(201,162,83,.08) var(--grid)); }
+      linear-gradient(0deg, rgba(201,162,83,.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(201,162,83,.08) 1px, transparent 1px); }
+  .map-viewport.dragging { cursor: grabbing; }
+  /* world — только носитель токенов; токены позиционируются от его origin (0,0) */
+  .map-world { position: absolute; top: 0; left: 0; width: 0; height: 0; transform-origin: 0 0; }
   .map-label { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5;
     font-family: 'Cinzel'; font-size: 12px; letter-spacing: .15em; color: var(--ink-dim); text-transform: uppercase; }
   .grid-hint { position: absolute; bottom: 14px; right: 16px; z-index: 5; font-size: 11px; color: var(--ink-dim);
@@ -951,6 +955,11 @@
 
     function apply() {
       world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`;
+      // неподвижная сетка vp: шаг привязан к зуму, сдвиг — к пану,
+      // тот же GRID и view, что у токенов → сетка и токены совпадают
+      const g = GRID * view.zoom;
+      vp.style.backgroundSize = `${g}px ${g}px`;
+      vp.style.backgroundPosition = `${view.x}px ${view.y}px`;
       if (zlvl) zlvl.textContent = Math.round(view.zoom * 100) + '%';
     }
     apply();
