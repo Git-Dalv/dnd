@@ -75,10 +75,10 @@ GRID_MAX = 60
 # 'gm' (двигает только мастер) либо memberId игрока (двигает только он). GM
 # двигает любой токен; игрок — только свой. Позиции (x,y) — в КЛЕТКАХ.
 DEFAULT_TOKENS = [
-    {"id": "tok_liandra", "name": "Лиэндра", "x": 3,  "y": 6, "enemy": False, "controlledBy": "player_dana"},
-    {"id": "tok_torin",   "name": "Торин",   "x": 5,  "y": 4, "enemy": False, "controlledBy": "player_max"},
-    {"id": "tok_goblin1", "name": "Гоблин",  "x": 8,  "y": 3, "enemy": True,  "controlledBy": "gm"},
-    {"id": "tok_goblin2", "name": "Гоблин",  "x": 10, "y": 5, "enemy": True,  "controlledBy": "gm"},
+    {"id": "tok_liandra", "name": "Лиэндра", "x": 3,  "y": 6, "enemy": False, "controlledBy": "player_dana", "hp": {"current": 22, "max": 27}, "conditions": []},
+    {"id": "tok_torin",   "name": "Торин",   "x": 5,  "y": 4, "enemy": False, "controlledBy": "player_max",  "hp": {"current": 31, "max": 48}, "conditions": []},
+    {"id": "tok_goblin1", "name": "Гоблин",  "x": 8,  "y": 3, "enemy": True,  "controlledBy": "gm", "hp": {"current": 7, "max": 7}, "conditions": []},
+    {"id": "tok_goblin2", "name": "Гоблин",  "x": 10, "y": 5, "enemy": True,  "controlledBy": "gm", "hp": {"current": 7, "max": 7}, "conditions": []},
 ]
 
 
@@ -326,6 +326,55 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
                               "to": {"x": x, "y": y}, "by": member_id})
         return
 
+    # --- изменение HP токена: та же модель прав, что у token.move ---
+    if mtype == "token.hp":
+        token = room.tokens.get(msg.get("tokenId"))
+        if token is None:
+            return
+        # GM меняет HP любому; игрок — только своему токену (controlledBy)
+        if role != "gm" and token.get("controlledBy") != member_id:
+            return
+        hp = token.get("hp") or {"current": 0, "max": 0}
+        mx = int(hp.get("max") or 0)
+        try:
+            if msg.get("set") is not None:
+                cur = int(msg["set"])
+            elif msg.get("delta") is not None:
+                cur = int(hp.get("current", 0)) + int(msg["delta"])
+            else:
+                return
+        except (TypeError, ValueError):
+            return
+        if mx <= 0:
+            mx = max(cur, int(hp.get("current", 0)))   # нет max — берём за потолок текущее/новое
+        cur = max(0, min(mx, cur))
+        token["hp"] = {"current": cur, "max": mx}
+        token["down"] = cur <= 0                        # маркер выбывания
+        await room.broadcast({"type": "token.hp.changed", "tokenId": token["id"],
+                              "hp": token["hp"], "down": token["down"]})
+        room.persist_tokens()                           # HP — сессионное событие (не позиция)
+        return
+
+    # --- состояния токена (poisoned/stunned/...): та же модель прав ---
+    if mtype == "token.condition":
+        token = room.tokens.get(msg.get("tokenId"))
+        if token is None:
+            return
+        if role != "gm" and token.get("controlledBy") != member_id:
+            return
+        conds = list(token.get("conditions") or [])
+        for c in (msg.get("add") or []):
+            if c and c not in conds:
+                conds.append(c)
+        for c in (msg.get("remove") or []):
+            if c in conds:
+                conds.remove(c)
+        token["conditions"] = conds
+        await room.broadcast({"type": "token.condition.changed", "tokenId": token["id"],
+                              "conditions": conds})
+        room.persist_tokens()
+        return
+
     # --- создание NPC-фишек: только мастер (проверка прав на сервере) ---
     if mtype == "npc.create":
         if not require_gm(room.members.get(member_id)):
@@ -349,8 +398,10 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
             # копии чуть смещаем, чтобы не легли в одну клетку; клампим в карту
             x = max(0, min(GRID_MAX, bx + (i % 5)))
             y = max(0, min(GRID_MAX, by + (i // 5)))
+            hp = dict(statblock.get("hp") or {"current": 1, "max": 1})
             tok = {"id": tok_id, "name": name, "x": x, "y": y, "enemy": True,
-                   "controlledBy": "gm", "statblock": dict(statblock)}
+                   "controlledBy": "gm", "statblock": dict(statblock),
+                   "hp": hp, "conditions": [], "down": False}
             room.tokens[tok_id] = tok
             added.append(tok)
         room.persist_tokens()                          # сессионное событие — сохраняем

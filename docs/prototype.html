@@ -114,6 +114,24 @@
   .token.movable:hover { box-shadow: 0 3px 8px rgba(0,0,0,.6), 0 0 0 3px rgba(201,162,83,.5); }
   .token.grabbing { cursor: grabbing; z-index: 30;
     box-shadow: 0 6px 16px rgba(0,0,0,.7), 0 0 0 3px rgba(201,162,83,.8); }
+  .token.down { filter: grayscale(.7) brightness(.6); }
+  .tok-name { pointer-events: none; }
+  .tok-hp { position: absolute; left: 4px; right: 4px; bottom: 3px; height: 4px; border-radius: 2px;
+    background: #2a1410; overflow: hidden; pointer-events: none; }
+  .tok-hp-fill { height: 100%; background: linear-gradient(90deg, #6a2a1a, #4a7a3a); }
+  .tok-cond { position: absolute; top: 1px; left: 0; right: 0; text-align: center; font-size: 7px;
+    color: #b06ad0; line-height: 1; pointer-events: none; }
+  .tok-down { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 20px; pointer-events: none; }
+  /* кнопки урона/лечения и состояний в мини-листе */
+  .tok-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .tok-ctl { width: 40px; height: 30px; border-radius: 5px; cursor: pointer; font-family: 'Cinzel'; font-size: 12px;
+    background: linear-gradient(160deg, var(--panel-2), #181309); border: 1px solid var(--edge-bright); color: var(--ink); }
+  .tok-ctl:hover { border-color: var(--gold); }
+  .tok-cond-btn { padding: 5px 9px; border-radius: 5px; cursor: pointer; font-family: 'Spectral'; font-size: 12px;
+    background: #241c14; border: 1px solid var(--edge-bright); color: var(--ink-dim); }
+  .tok-cond-btn.on { color: #b06ad0; border-color: #6a3a7a; background: #2a1c30; }
+  .tok-cond-btn:hover { color: var(--ink); }
 
   /* alt panels in center (Карточка/Дневник) — поверх карты и плавающего хотбара */
   .sheet, .journal {
@@ -694,6 +712,16 @@
       const t = (store.tokens || []).find(x => x.id === msg.tokenId);
       if (t) { t.x = msg.to.x; t.y = msg.to.y; renderTokens(); }
     },
+    // HP токена изменился (урон/лечение/выбывание)
+    'token.hp.changed': (msg) => {
+      const t = (store.tokens || []).find(x => x.id === msg.tokenId);
+      if (t) { t.hp = msg.hp; t.down = msg.down; renderTokens(); refreshTokenSheet(t.id); }
+    },
+    // состояния токена изменились
+    'token.condition.changed': (msg) => {
+      const t = (store.tokens || []).find(x => x.id === msg.tokenId);
+      if (t) { t.conditions = msg.conditions; renderTokens(); refreshTokenSheet(t.id); }
+    },
   };
 
   net.onMessage = (msg) => {
@@ -1134,13 +1162,53 @@
     el.innerHTML = sheetHtml(c);
   }
 
-  // мини-лист NPC по клику на фишку — тот же рендер карточки (sheetHtml)
+  // мини-лист токена по клику — тот же рендер карточки (sheetHtml) + живые HP/
+  // состояния и (если вправе) кнопки урона/лечения и тумблеры состояний.
+  let currentSheetTokenId = null;
+  const COND_RU = { poisoned: 'Отравлен', stunned: 'Оглушён', prone: 'Лежит', unconscious: 'Без сознания', frightened: 'Напуган' };
+
   function openTokenSheet(tokenId) {
     const t = (store.tokens || []).find(x => x.id === tokenId);
-    if (!t || !t.statblock) return;            // мини-лист только у NPC со статблоком
-    const sb = Object.assign({ name: t.name }, t.statblock);
-    document.getElementById('npcBody').innerHTML = sheetHtml(sb);
+    if (!t) return;
+    const canEdit = canMove(t);                // GM — любой; игрок — свой токен
+    if (!t.statblock && !canEdit) return;      // чужой не-NPC токен не открываем
+    currentSheetTokenId = tokenId;
+    renderTokenSheetBody(t, canEdit);
     document.getElementById('npcWin').classList.add('show');
+  }
+
+  function renderTokenSheetBody(t, canEdit) {
+    const body = document.getElementById('npcBody');
+    const base = t.statblock ? Object.assign({ name: t.name }, t.statblock) : { name: t.name };
+    if (t.hp) base.hp = t.hp;                   // живой HP с токена (а не из статблока)
+    let html = sheetHtml(base);
+    if ((t.conditions || []).length) html += `<div class="sheet-row"><b>Состояния:</b> ${esc(t.conditions.join(', '))}</div>`;
+    if (t.down) html += `<div class="sheet-row" style="color:#d98a7a;"><b>Выбыл</b></div>`;
+    if (canEdit) {
+      html += '<div class="tok-controls">'
+        + [-5, -1, 1, 5].map(d => `<button class="tok-ctl" data-hp="${d}">${d > 0 ? '+' + d : d}</button>`).join('')
+        + '</div>';
+      html += '<div class="tok-controls">'
+        + Object.keys(COND_RU).map(c => `<button class="tok-cond-btn${(t.conditions || []).includes(c) ? ' on' : ''}" data-cond="${c}">${COND_RU[c]}</button>`).join('')
+        + '</div>';
+    }
+    body.innerHTML = html;
+    if (canEdit) {
+      body.querySelectorAll('[data-hp]').forEach(b => b.onclick = () =>
+        net.send({ type: 'token.hp', tokenId: t.id, delta: parseInt(b.dataset.hp, 10) }));
+      body.querySelectorAll('[data-cond]').forEach(b => b.onclick = () => {
+        const has = (t.conditions || []).includes(b.dataset.cond);
+        net.send({ type: 'token.condition', tokenId: t.id, [has ? 'remove' : 'add']: [b.dataset.cond] });
+      });
+    }
+  }
+
+  // если мини-лист открыт для этого токена — перерисовать после факта сервера
+  function refreshTokenSheet(id) {
+    if (currentSheetTokenId !== id) return;
+    if (!document.getElementById('npcWin').classList.contains('show')) return;
+    const t = (store.tokens || []).find(x => x.id === id);
+    if (t) renderTokenSheetBody(t, canMove(t));
   }
 
   function actionPrimaryRoll(act) {
@@ -1474,13 +1542,29 @@
     world.querySelectorAll('.token').forEach(el => el.remove());
     for (const t of (store.tokens || [])) {
       const el = document.createElement('div');
-      el.className = 'token' + (t.enemy ? ' enemy' : '') + (canMove(t) ? ' movable' : '');
+      el.className = 'token' + (t.enemy ? ' enemy' : '') + (canMove(t) ? ' movable' : '') + (t.down ? ' down' : '');
       el.dataset.id = t.id;
       el.dataset.x = t.x;      // клетка — источник истины
       el.dataset.y = t.y;
       el.style.left = (t.x * GRID) + 'px';   // пиксель считает клиент из GRID
       el.style.top  = (t.y * GRID) + 'px';
-      el.textContent = t.name;
+      // имя + HP-бар + состояния + маркер выбывания
+      const nm = document.createElement('span'); nm.className = 'tok-name'; nm.textContent = t.name;
+      el.appendChild(nm);
+      if (t.hp && t.hp.max > 0) {
+        const pct = Math.max(0, Math.min(100, Math.round(100 * (t.hp.current || 0) / t.hp.max)));
+        const bar = document.createElement('div'); bar.className = 'tok-hp';
+        bar.innerHTML = `<div class="tok-hp-fill" style="width:${pct}%"></div>`;
+        bar.title = `${t.hp.current}/${t.hp.max}`;
+        el.appendChild(bar);
+      }
+      if ((t.conditions || []).length) {
+        const cd = document.createElement('div'); cd.className = 'tok-cond';
+        cd.textContent = '●'.repeat(t.conditions.length);
+        cd.title = t.conditions.join(', ');
+        el.appendChild(cd);
+      }
+      if (t.down) { const skull = document.createElement('div'); skull.className = 'tok-down'; skull.textContent = '💀'; el.appendChild(skull); }
       // клик по НЕдвигаемому токену открывает мини-лист (движение — у movable
       // через drag-IIFE, который сам отличит клик от перетаскивания)
       if (!canMove(t)) el.onclick = () => openTokenSheet(t.id);
