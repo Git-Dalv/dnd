@@ -46,5 +46,26 @@
     "custom": [
       { "id": "res_arcrec", "name": "Arcane Recovery", "current": 1, "max": 1, "resetsOn": "longRest" }
     ]
-  }
+  },
+  "_comment_inspiration": "Героическое вдохновение — отдельный маркер персонажа (bool). Правая панель бара рисует звезду active/погашенной.",
+  "heroicInspiration": false,
+  "_comment_hotbar": "Раскладка НАСТРАИВАЕМОГО бара быстрого доступа: массив фиксированной длины 16 (слоты 0..15, сетка 2×8). Бар НЕ дублирует actions — хранит только РАСКЛАДКУ (что в каком слоте); сами объекты живут в actions/инвентаре, слот ссылается на них по ref (id действия или предмета) ЛИБО ref:null для пустого слота. Бар не схлопывается: пустые слоты остаются рамками. Раскладка per-character и едет внутри блоба персонажа (characters.data), отдельная таблица не нужна.",
+  "hotbar": [
+    { "slot": 0, "ref": "spell_fire_bolt" },
+    { "slot": 1, "ref": "spell_fireball" },
+    { "slot": 2, "ref": null },
+    { "slot": 3, "ref": null },
+    { "slot": 4, "ref": null },
+    { "slot": 5, "ref": null },
+    { "slot": 6, "ref": null },
+    { "slot": 7, "ref": null },
+    { "slot": 8, "ref": null },
+    { "slot": 9, "ref": null },
+    { "slot": 10, "ref": null },
+    { "slot": 11, "ref": null },
+    { "slot": 12, "ref": null },
+    { "slot": 13, "ref": null },
+    { "slot": 14, "ref": null },
+    { "slot": 15, "ref": null }
+  ]
 }

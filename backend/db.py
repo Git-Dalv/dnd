@@ -138,6 +138,21 @@ def get_character(char_id: str) -> dict | None:
     return json.loads(row["data"]) if row else None
 
 
+def update_character_hotbar(char_id: str, hotbar: list) -> bool:
+    """Обновить ТОЛЬКО раскладку бара внутри блоба персонажа (characters.data).
+    Раскладка едет вместе с персонажем — отдельная таблица не нужна. Это событие
+    уровня сессии (перетащил в слот), пишем сразу. Возвращает True, если нашли."""
+    with connect() as conn:
+        row = conn.execute("SELECT data FROM characters WHERE char_id=?", (char_id,)).fetchone()
+        if not row:
+            return False
+        data = json.loads(row["data"])
+        data["hotbar"] = hotbar
+        conn.execute("UPDATE characters SET data=? WHERE char_id=?",
+                     (json.dumps(data, ensure_ascii=False), char_id))
+        return True
+
+
 # ---- места (лимит 4+1 проверяет сервер) -----------------------------------
 
 def list_seats(room_id: str) -> list[dict]:

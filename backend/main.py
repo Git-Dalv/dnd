@@ -212,6 +212,21 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
         })
         return
 
+    # --- сохранить раскладку бара: пишем в блоб персонажа (событие сессии) ---
+    if mtype == "hotbar.set":
+        char_id = msg.get("charId")
+        member = room.members.get(member_id)
+        # проверка прав на сервере: менять можно ТОЛЬКО раскладку своего персонажа
+        if not member or not char_id or member.char_id != char_id:
+            return
+        hotbar = msg.get("hotbar")
+        if not isinstance(hotbar, list):
+            return
+        db.update_character_hotbar(char_id, hotbar)
+        # подтверждение лично инициатору; другим не транслируем (раскладка приватна)
+        await room.send_to([member_id], {"type": "hotbar.saved", "charId": char_id})
+        return
+
     # --- занять место: источник истины — БД (лимит 4+1, гонку решает атомарный UPDATE) ---
     if mtype == "seat.take":
         seat_no = msg.get("seatNo")
