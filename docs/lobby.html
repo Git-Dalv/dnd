@@ -51,6 +51,8 @@
   .btn-primary { background: var(--gold); color: #1a140a; }
   .btn-primary:hover { background: var(--gold-bright); }
   .btn-primary:disabled { opacity: .5; cursor: default; }
+  .btn-ghost { background: transparent; color: var(--ink-dim); border: 1px solid var(--edge-bright); }
+  .btn-ghost:hover { color: var(--gold-bright); border-color: var(--gold); }
 
   /* games list */
   .section-title { font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: .1em; color: var(--ink-dim);
@@ -85,6 +87,7 @@
     <div class="create-row">
       <input id="gameName" type="text" placeholder="Название новой игры (напр. Waterdeep: Dragon Heist)" autocomplete="off">
       <button class="btn btn-primary" id="createBtn">Создать игру</button>
+      <button class="btn btn-ghost" id="sandboxBtn" title="Открыть песочницу мастера (dev-режим)">⚒ Песочница</button>
     </div>
     <div class="error" id="createErr"></div>
   </div>
@@ -105,6 +108,13 @@
   function goToSeats(roomId) {
     location.href = 'seats.html?room=' + encodeURIComponent(roomId);
   }
+
+  // Песочница: сразу в прототип как GM в dev-режиме, минуя выбор места.
+  // Отдельная фиксированная комната, чтобы не смешивать с боевыми играми.
+  document.getElementById('sandboxBtn').onclick = () => {
+    location.href = 'prototype.html?room=room_sandbox&role=gm&member=dev&name=' +
+      encodeURIComponent('Песочница') + '&dev=1';
+  };
 
   function fmtDate(unixSec) {
     if (!unixSec) return '';

@@ -116,6 +116,17 @@
     box-shadow: 0 6px 16px rgba(0,0,0,.7), 0 0 0 3px rgba(201,162,83,.8); }
   .token.down { filter: grayscale(.7) brightness(.6); }
   .token.turn { box-shadow: 0 0 0 3px var(--gold-bright), 0 0 14px rgba(232,200,120,.7); z-index: 20; }
+  /* скрытый токен (виден только мастеру/в dev) — полупрозрачный с пометкой */
+  .token.hidden-tok { opacity: .45; }
+  .token.hidden-tok::after { content: '🚫'; position: absolute; top: -6px; left: -6px; font-size: 11px; }
+  /* палитра песочницы — оверлей слева на сцене, виден только в dev */
+  .dev-palette { position: absolute; top: 48px; left: 16px; z-index: 8; display: none; flex-direction: column; gap: 5px; }
+  .stage.dev .dev-palette { display: flex; }
+  .dev-tool { width: 34px; height: 34px; border-radius: 6px; cursor: pointer; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--edge-bright); }
+  .dev-tool:hover { border-color: var(--gold); }
+  .dev-tool.active { border-color: var(--gold-bright); background: rgba(201,162,83,.2); box-shadow: 0 0 8px rgba(201,162,83,.4); }
   /* трекер инициативы — оверлей справа сверху на сцене */
   .initiative { position: absolute; top: 14px; right: 16px; z-index: 7; display: none;
     min-width: 150px; background: linear-gradient(180deg, rgba(31,26,19,.96), rgba(20,16,11,.97));
@@ -457,6 +468,16 @@
       </div>
       <!-- трекер инициативы (виден в бою; renderCombat из store.combat) -->
       <div class="initiative" id="initiativeTracker"></div>
+      <!-- палитра песочницы (только dev-режим; взаимоисключающие инструменты) -->
+      <div class="dev-palette" id="devPalette">
+        <div class="dev-tool" data-tool="token" title="Поставить токен">🔵</div>
+        <div class="dev-tool" data-tool="npc" title="Поставить NPC">👹</div>
+        <div class="dev-tool" data-tool="fog-reveal" title="Туман: открыть">🌥</div>
+        <div class="dev-tool" data-tool="fog-hide" title="Туман: скрыть">🌫</div>
+        <div class="dev-tool" data-tool="grid" title="Сетка">▦</div>
+        <div class="dev-tool" data-tool="scenes" title="Сцены">🗺</div>
+        <div class="dev-tool" data-tool="delete" title="Удалить">🗑</div>
+      </div>
     </div>
     <!-- sheet view -->
     <!-- карточка персонажа — наполняется renderSheet() из store.character -->
@@ -650,9 +671,10 @@
     const role = q.get('role') || 'player';
     const name = q.get('name') || member;
     const char = q.get('char') || '';   // персонаж с экрана мест — отдаём серверу
+    const dev = q.get('dev') === '1';    // dev-режим песочницы (чисто клиентский)
 
     const api = {
-      room, member, role, name, char,
+      room, member, role, name, char, dev,
       ws: null,
       onMessage: null,        // назначается ниже: net.onMessage = fn(msg)
       send(obj) {
@@ -1481,7 +1503,7 @@
   // is_gm и игнорирует gm-действия от игроков); клиентский view лишь
   // показывает разный UI из ОДНОГО файла. См. dm-layer-map.md, этап 0.
   // ===================================================================
-  store.me = { role: net.role, member: net.member, char: net.char };
+  store.me = { role: net.role, member: net.member, char: net.char, dev: net.dev };
 
   function applyRoleView() {
     const isGm = store.me && store.me.role === 'gm';
@@ -1500,6 +1522,29 @@
     }
   }
   applyRoleView();
+
+  // ===================================================================
+  // Песочница (dev-режим): палитра инструментов. activeTool — ЛОКАЛЬНЫЙ
+  // режим редактора (как пан/зум), не в store. Клики по карте смотрят на
+  // него (см. S3/S4). Песочница не вводит новых прав — те же gm-события.
+  // ===================================================================
+  let activeTool = null;
+  if (store.me.dev) {
+    const stageEl = document.querySelector('.stage');
+    if (stageEl) stageEl.classList.add('dev');     // показывает .dev-palette
+    document.querySelectorAll('.dev-tool').forEach(btn => {
+      btn.onclick = () => {
+        const t = btn.dataset.tool;
+        activeTool = (activeTool === t) ? null : t; // повторный клик — выключить
+        document.querySelectorAll('.dev-tool').forEach(b => b.classList.toggle('active', b.dataset.tool === activeTool));
+        if (activeTool === 'grid') openGridTool();
+        if (activeTool === 'scenes') openScenesTool();
+      };
+    });
+  }
+  // заглушки до S5 (инструменты «Сетка»/«Сцены» получат логику там)
+  function openGridTool() { console.log('[sandbox] grid tool (S5)'); }
+  function openScenesTool() { console.log('[sandbox] scenes tool (S5)'); }
 
   // Пульт мастера (gm-only по виду; сервер всё равно проверяет права).
   document.querySelectorAll('.dm-btn').forEach(b => {
@@ -1614,9 +1659,13 @@
     const c = store.combat || {};
     const turnId = (c.active && c.order && c.order[c.turnIndex]) ? c.order[c.turnIndex].tokenId : null;
     for (const t of (store.tokens || [])) {
+      const dev = store.me && store.me.dev;
+      // скрытый токен: вне dev игрокам его рисовать не должны (фильтрует сервер),
+      // но DM/dev видит его помеченным (полупрозрачным), а не пропущенным
+      if (t.hidden && !dev && !(store.me && store.me.role === 'gm')) continue;
       const el = document.createElement('div');
       el.className = 'token' + (t.enemy ? ' enemy' : '') + (canMove(t) ? ' movable' : '')
-        + (t.down ? ' down' : '') + (t.id === turnId ? ' turn' : '');
+        + (t.down ? ' down' : '') + (t.id === turnId ? ' turn' : '') + (t.hidden ? ' hidden-tok' : '');
       el.dataset.id = t.id;
       el.dataset.x = t.x;      // клетка — источник истины
       el.dataset.y = t.y;
