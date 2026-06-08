@@ -99,6 +99,15 @@ class Room:
             for t in DEFAULT_TOKENS:
                 self.tokens[t["id"]] = dict(t)
 
+    def persist_tokens(self):
+        """Снапшот раскладки токенов в БД на СЕССИОННЫХ событиях (дисконнект GM,
+        создание NPC, конец боя). НЕ зовём на каждый token.move: позиции — это
+        событие «тика», частая запись в БД била бы по производительности; в
+        моменте они и так живут в памяти Room. Мерджим, не затирая прочие ключи."""
+        state = db.get_game_state(self.room_id)
+        state["tokens"] = list(self.tokens.values())
+        db.save_game_state(self.room_id, state)
+
     async def broadcast(self, message: dict):
         """Всем в комнате."""
         dead = []
@@ -141,8 +150,15 @@ def get_room(room_id: str) -> Room:
                 room.name = g["name"]
                 room.gm_id = g["gmId"]
                 break
+        # токены поднимаем из сохранённого состояния игры; сид — только фолбэк
+        state = db.get_game_state(room_id)
+        saved = state.get("tokens")
+        if isinstance(saved, list) and saved:
+            for t in saved:
+                if t.get("id"):
+                    room.tokens[t["id"]] = dict(t)
         rooms[room_id] = room
-    room.seed_tokens_if_empty()
+    room.seed_tokens_if_empty()   # фолбэк: новая игра без сохранённой раскладки
     return room
 
 
@@ -194,6 +210,9 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
         if room.members.get(member_id) is member:
             room.members.pop(member_id, None)
             db.free_seat(room_id, member_id)   # освобождаем место (событие уровня сессии)
+            # уход GM — сессионное событие: снапшотим текущие позиции токенов в БД
+            if role == "gm":
+                room.persist_tokens()
             await room.broadcast({"type": "member.connection", "memberId": member_id, "connected": False})
             await room.broadcast({"type": "seat.updated", "seats": db.list_seats(room_id)})
 
