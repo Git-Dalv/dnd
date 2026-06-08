@@ -1,0 +1,41 @@
+[
+  {
+    "_comment": "Раса — бонусы характеристик/скорость/размер/черты для автоподстановки. subraces — второй выбор с доп. бонусами/чертами. Тексты черт — свои краткие формулировки.",
+    "id": "race_human",
+    "name": "Human",
+    "nameLocal": "Человек",
+    "abilityBonuses": { "str": 1, "dex": 1, "con": 1, "int": 1, "wis": 1, "cha": 1 },
+    "speed": 30,
+    "size": "Medium",
+    "traits": ["Универсальность: +1 ко всем характеристикам", "Один дополнительный язык"],
+    "source": "HB"
+  },
+  {
+    "id": "race_elf",
+    "name": "Elf",
+    "nameLocal": "Эльф",
+    "abilityBonuses": { "dex": 2 },
+    "speed": 30,
+    "size": "Medium",
+    "traits": ["Тёмное зрение 60 фт", "Обострённые чувства (владение Восприятием)", "Транс (4 часа вместо сна)", "Происхождение фей"],
+    "subraces": [
+      { "id": "subrace_high_elf", "name": "High Elf", "nameLocal": "Высший эльф", "abilityBonuses": { "int": 1 }, "traits": ["Один заговор волшебника", "Дополнительный язык"] },
+      { "id": "subrace_wood_elf", "name": "Wood Elf", "nameLocal": "Лесной эльф", "abilityBonuses": { "wis": 1 }, "traits": ["Скорость 35 фт", "Маскировка в дикой местности"] }
+    ],
+    "source": "HB"
+  },
+  {
+    "id": "race_dwarf",
+    "name": "Dwarf",
+    "nameLocal": "Дварф",
+    "abilityBonuses": { "con": 2 },
+    "speed": 25,
+    "size": "Medium",
+    "traits": ["Тёмное зрение 60 фт", "Дварфская устойчивость (преимущество против яда)", "Владение боевыми/ручными топорами и молотами"],
+    "subraces": [
+      { "id": "subrace_hill_dwarf", "name": "Hill Dwarf", "nameLocal": "Холмовой дварф", "abilityBonuses": { "wis": 1 }, "traits": ["Дварфская крепость: +1 хит за уровень"] },
+      { "id": "subrace_mountain_dwarf", "name": "Mountain Dwarf", "nameLocal": "Горный дварф", "abilityBonuses": { "str": 2 }, "traits": ["Владение лёгкой и средней бронёй"] }
+    ],
+    "source": "HB"
+  }
+]

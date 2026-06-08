@@ -1,0 +1,42 @@
+[
+  {
+    "_comment": "Класс — минимальный канон для автоподстановки при создании персонажа. Тексты — свои краткие формулировки, не копипаста из книг. startingHp = максимум кости хитов (движок добавит модификатор Телосложения).",
+    "id": "class_fighter",
+    "name": "Fighter",
+    "nameLocal": "Воин",
+    "hitDie": 10,
+    "primaryAbility": "str",
+    "savingThrows": ["str", "con"],
+    "armorProf": ["light", "medium", "heavy", "shields"],
+    "weaponProf": ["simple", "martial"],
+    "skillChoices": { "count": 2, "from": ["Acrobatics", "Animal Handling", "Athletics", "History", "Insight", "Intimidation", "Perception", "Survival"] },
+    "startingHp": 10,
+    "source": "HB"
+  },
+  {
+    "id": "class_wizard",
+    "name": "Wizard",
+    "nameLocal": "Волшебник",
+    "hitDie": 6,
+    "primaryAbility": "int",
+    "savingThrows": ["int", "wis"],
+    "armorProf": [],
+    "weaponProf": ["daggers", "quarterstaffs", "light crossbows"],
+    "skillChoices": { "count": 2, "from": ["Arcana", "History", "Insight", "Investigation", "Medicine", "Religion"] },
+    "startingHp": 6,
+    "source": "HB"
+  },
+  {
+    "id": "class_rogue",
+    "name": "Rogue",
+    "nameLocal": "Плут",
+    "hitDie": 8,
+    "primaryAbility": "dex",
+    "savingThrows": ["dex", "int"],
+    "armorProf": ["light"],
+    "weaponProf": ["simple", "hand crossbows", "longswords", "rapiers", "shortswords"],
+    "skillChoices": { "count": 4, "from": ["Acrobatics", "Athletics", "Deception", "Insight", "Intimidation", "Investigation", "Perception", "Performance", "Persuasion", "Sleight of Hand", "Stealth"] },
+    "startingHp": 8,
+    "source": "HB"
+  }
+]
