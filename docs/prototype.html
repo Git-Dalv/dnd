@@ -66,6 +66,13 @@
     background: linear-gradient(180deg, #322818, var(--panel-2));
   }
   .nav-spacer { flex: 1; }
+  .nav-exit {
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--edge); border-radius: 4px; padding: 11px 10px;
+    font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: .04em;
+    color: var(--ink-dim); cursor: pointer; text-align: center; transition: all .15s;
+  }
+  .nav-exit:hover { color: #d98a7a; border-color: var(--blood); }
 
   /* ---------- CENTER STAGE ---------- */
   .stage {
@@ -109,6 +116,13 @@
     background: radial-gradient(ellipse at 50% 0%, #221c14, #16130d);
   }
   .sheet.show, .journal.show { display: block; }
+  /* журнал-вкладка: тот же лист поверх сцены, но flex-колонка — чтобы
+     #logList держал собственный скролл и автопрокрутку (renderLog не меняем) */
+  .logpanel { position: absolute; inset: 0; z-index: 20; display: none; flex-direction: column;
+    padding: 24px 30px; background: radial-gradient(ellipse at 50% 0%, #221c14, #16130d); }
+  .logpanel.show { display: flex; }
+  .logpanel h2 { font-family: 'Cinzel'; color: var(--gold-bright); font-size: 18px; letter-spacing: .08em;
+    margin-bottom: 16px; border-bottom: 1px solid var(--edge); padding-bottom: 8px; flex-shrink: 0; }
   .sheet h2, .journal h2 { font-family: 'Cinzel'; color: var(--gold-bright); font-size: 18px;
     letter-spacing: .08em; margin-bottom: 16px; border-bottom: 1px solid var(--edge); padding-bottom: 8px; }
   .stat-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 20px; }
@@ -290,9 +304,11 @@
     <div class="nav-tab active" data-view="map">Карта</div>
     <div class="nav-tab" data-view="journal">Дневник</div>
     <div class="nav-tab" data-view="quests">Задачи</div>
+    <div class="nav-tab" data-view="log">Журнал</div>
     <div class="nav-tab" data-view="sheet">Карточка персонажа</div>
     <div class="nav-tab" data-view="codex">Справочник</div>
     <div class="nav-spacer"></div>
+    <div class="nav-exit" id="navExit">⮜ Выход</div>
   </div>
 
   <!-- CENTER -->
@@ -327,6 +343,11 @@
       <h2>Задачи</h2>
       <p><b>Активно:</b> Найти пропавший караван · Выследить агента Ксанатара</p>
       <p><b>Выполнено:</b> Отбиться от засады в переулке</p>
+    </div>
+    <!-- log view — журнал бросков (наполняется renderLog() из store.log, тот же #logList) -->
+    <div class="logpanel" id="view-log">
+      <h2>⚜ Журнал</h2>
+      <div class="log-list" id="logList"></div>
     </div>
     <!-- codex view (рендерится из store.catalog через renderCodex) -->
     <div class="codex" id="view-codex">
@@ -366,18 +387,15 @@
     <!-- видеокарточки — renderParty() из store.seats (подписи занятых мест) -->
     <div id="partyCards" style="display:flex; flex-direction:column; gap:8px;"></div>
 
+    <!-- Запросы к DM'у (пункт 7 плана) временно скрыты — логика и модалка
+         ниже сохранены, просто без видимой точки входа в правой колонке.
     <div class="requests">
       <h3>⚜ Запросы к DM'у</h3>
       <button class="req-btn" data-req="Скрытная проверка">🤫 Скрытная проверка</button>
       <button class="req-btn" data-req="Отойти от группы">🚶 Отойти от группы</button>
       <button class="req-btn" data-req="Личный вопрос мастеру">💬 Личный вопрос</button>
     </div>
-
-    <!-- LOG / журнал бросков (наполняется из store.log) -->
-    <div class="log">
-      <h3>⚜ Журнал</h3>
-      <div class="log-list" id="logList"></div>
-    </div>
+    -->
   </div>
 
 </div>
@@ -764,7 +782,7 @@
   renderCodex();  // первичная отрисовка (пустое состояние)
 
   // left nav -> center view switch
-  const views = ['map','journal','quests','sheet','codex'];
+  const views = ['map','journal','quests','log','sheet','codex'];
   document.querySelectorAll('.nav-tab').forEach(tab => {
     tab.onclick = () => {
       document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
@@ -778,6 +796,18 @@
       });
     };
   });
+
+  // Выход: осознанно закрываем WS — на дисконнект сервер зовёт db.free_seat
+  // и рассылает seat.updated (место освобождается надёжнее, чем по закрытию
+  // вкладки). Затем возвращаемся в лобби (с room_id этой же игры).
+  // TODO: lobby.html пока не использует ?room — позже пусть прыгает к выбору
+  //       места именно этой игры (seats.html?room=...).
+  document.getElementById('navExit').onclick = () => {
+    try {
+      if (net.ws) { net.ws.onclose = null; net.ws.close(); }   // onclose=null — без авто-переподключения
+    } catch (e) {}
+    location.href = 'lobby.html' + (net.room ? ('?room=' + encodeURIComponent(net.room)) : '');
+  };
 
   // hotbar tabs
   const hbViews = { abilities: 'action-icons', char: 'hb-text', inv: 'hb-text' };
