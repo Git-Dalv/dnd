@@ -176,6 +176,17 @@ def ensure_game(room_id: str, name: str | None = None, gm_id: str | None = None)
         return False                 # гонка: кто-то создал параллельно — это ок
 
 
+def get_game(room_id: str) -> dict | None:
+    """Точечная карточка игры (метаданные без state). Источник истины о GM —
+    games.gm_id (для проверки прав на HTTP)."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT room_id, name, gm_id, created_at FROM games WHERE room_id=?", (room_id,)
+        ).fetchone()
+    return {"roomId": row["room_id"], "name": row["name"],
+            "gmId": row["gm_id"], "createdAt": row["created_at"]} if row else None
+
+
 def get_game_state(room_id: str) -> dict:
     """Читает games.state (редко меняющееся состояние сцены: токены, позиции,
     controlledBy). Пустой {}, если игры нет или state пуст/битый."""

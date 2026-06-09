@@ -1112,6 +1112,33 @@ def _game_exists(room_id: str) -> bool:
     return any(g["roomId"] == room_id for g in db.list_games())
 
 
+def is_gm_http(room_id: str, member_id: str | None) -> bool:
+    """Права GM для HTTP-мутаций (WS-сессию с ролью запрос не несёт — роль/член
+    передаётся явно и сверяется на сервере). Источник истины — games.gm_id.
+    Принимаем, если member_id: (1) == gm_id игры; (2) держит GM-место в seats
+    (реальный лобби-GM входит со случайным member_id); (3) dev-владелец песочницы
+    (временно, пока нет полноценной авторизации). Цель — отсечь посторонних,
+    знающих room_id, а не строгая криптоаутентификация."""
+    if not member_id:
+        return False
+    game = db.get_game(room_id)
+    if game is None:
+        return False
+    if member_id == game.get("gmId"):
+        return True
+    for s in db.list_seats(room_id):
+        if s.get("role") == "gm" and s.get("memberId") == member_id:
+            return True
+    if room_id == "room_sandbox" and member_id == "dev":   # песочница: её dev-владелец
+        return True
+    return False
+
+
+def require_gm_http(room_id: str, member_id: str | None):
+    if not is_gm_http(room_id, member_id):
+        raise HTTPException(status_code=403, detail="gm only")
+
+
 def _image_size(data: bytes):
     """Размеры картинки (w, h) из заголовков PNG/JPEG/WEBP без зависимостей.
     Не распознали — (None, None) (размеры не критичны, как и сказано в задаче)."""
@@ -1144,14 +1171,15 @@ def _image_size(data: bytes):
 
 @app.post("/api/games/{room_id}/assets")
 async def api_upload_asset(room_id: str, file: UploadFile = File(...),
-                           name: str = Form(""), kind: str = Form("map")):
+                           name: str = Form(""), kind: str = Form("map"),
+                           memberId: str = Form("")):
     # Загрузка картинки мира: файл на ДИСК (data/assets/{room}/{file}), в БД —
     # только метаданные+ссылка. Тяжёлый бинарь по HTTP (не через WS-снапшоты).
-    # TODO: проверка прав (gm) — пока открыто для «себя с друзьями».
     # Проверка наличия игры — ПРАВИЛЬНАЯ (FK): игра должна существовать. Песочница
     # самонастраивается на старте/входе (lifespan + ws_endpoint), поэтому проходит.
     if not _game_exists(room_id):
         raise HTTPException(status_code=404, detail="game not found")
+    require_gm_http(room_id, memberId)        # gm-only: симметрично WS require_gm
     mime = (file.content_type or "").split(";")[0].strip()
     ext = EXT_BY_MIME.get(mime)
     if not ext:
@@ -1178,11 +1206,12 @@ async def api_upload_asset(room_id: str, file: UploadFile = File(...),
 
 
 @app.delete("/api/games/{room_id}/assets/{asset_id}")
-async def api_delete_asset(room_id: str, asset_id: str):
-    # Удаляем запись и файл с диска. TODO: проверка прав (gm).
+async def api_delete_asset(room_id: str, asset_id: str, memberId: str = ""):
+    # Удаляем запись и файл с диска. gm-only (memberId из ?memberId=).
     meta = db.get_asset(asset_id)
     if not meta or meta["roomId"] != room_id:
         raise HTTPException(status_code=404, detail="asset not found")
+    require_gm_http(room_id, memberId)
     path = db.delete_asset(asset_id)
     if path:
         try:
