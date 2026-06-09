@@ -464,13 +464,24 @@ def get_room(room_id: str) -> Room:
 async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     await ws.accept()
     role = ws.query_params.get("role", "player")
-    name = ws.query_params.get("name", member_id)
     # Песочница самонастраивается при первом входе: строки в games может не быть
     # (вход из лобби минует POST /api/games). ensure_game идемпотентна — для
     # боевых игр это no-op. FK ассетов после этого удовлетворён.
     if room_id == "room_sandbox":
         db.ensure_game(room_id, "Песочница", "gm")
     room = get_room(room_id)
+    seats = db.list_seats(room_id)
+
+    # Имя участника для журнала (по убыванию приоритета): явное ?name= → имя из
+    # занятого места (display_name) → member_id. «Голый» вход без ?name= шлёт
+    # name=member_id (net-фолбэк в prototype.html), поэтому такое значение
+    # настоящим именем НЕ считаем и восстанавливаем имя из места.
+    qname = (ws.query_params.get("name") or "").strip()
+    name = qname if (qname and qname != member_id) else None
+    if not name:
+        name = next((s["displayName"] for s in seats
+                     if s.get("memberId") == member_id and s.get("displayName")), None)
+    name = name or member_id          # последний фолбэк — member_id (не 'guest')
     member = Member(member_id, name, role, ws)
     room.members[member_id] = member
 
@@ -479,7 +490,7 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     # каталогом, чтобы стол получил готовые rolls с modifier.
     char_id = ws.query_params.get("char")
     if not char_id:
-        for s in db.list_seats(room_id):
+        for s in seats:
             if s.get("memberId") == member_id:
                 char_id = s.get("charId")
                 break
@@ -618,7 +629,9 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
         if role != "gm" and not (1 <= seat_no <= db.MAX_PLAYER_SEATS):
             await room.send_to([member_id], {"type": "seat.denied", "reason": "bad_seat"})
             return
-        if db.take_seat(room.room_id, seat_no, member_id, char_id):
+        # имя игрока сохраняем в место — журнал подпишется им и при «голом» входе
+        seat_name = (msg.get("name") or "").strip() or None
+        if db.take_seat(room.room_id, seat_no, member_id, char_id, seat_name):
             await room.broadcast({"type": "seat.updated", "seats": db.list_seats(room.room_id)})
         else:
             await room.send_to([member_id], {"type": "seat.denied", "reason": "taken"})
