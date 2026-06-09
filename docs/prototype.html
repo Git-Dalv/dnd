@@ -784,8 +784,9 @@
     fog: [],                      // открытые клетки тумана [[x,y],...] (сервер)
     scenes: [],                   // список сцен [{id,name}] (сервер)
     activeSceneId: null,          // id активной сцены
-    scenarios: [],                // сценарии [{id,name,description,sceneIds,activeSceneId}]
+    scenarios: [],                // сценарии [{id,name,sceneIds,activeSceneId}] (сервер)
     activeScenarioId: null,       // активный сценарий
+    lore: { history: '', notes: '' },  // история/заметки МИРА (wiki — позже)
     scene: { map: null, mapAssetId: null, grid: { size: 48, offsetX: 0, offsetY: 0 },
              fogEnabled: false, notes: '', searchKey: '', description: '' },  // активная сцена
   };
@@ -934,7 +935,17 @@
     // список сценариев (наборов сцен) и активный
     'scenario.list': (msg) => {
       store.scenarios = msg.scenarios || [];
-      store.activeScenarioId = msg.activeScenarioId || null;
+      store.activeScenarioId = msg.activeScenarioId || store.activeScenarioId;
+      renderScenarioBar(); renderSceneBar();
+      if (document.getElementById('sceneWin').classList.contains('show')) renderScenesTool();
+    },
+    // переключение сценария: активный сценарий + его сцены + активная сцена.
+    // Карту подменяет отдельный scene.switched, который сервер шлёт следом.
+    'scenario.switched': (msg) => {
+      store.activeScenarioId = msg.scenarioId;
+      store.scenes = msg.scenes || [];
+      store.activeSceneId = msg.activeSceneId;
+      renderScenarioBar(); renderSceneBar();
       if (document.getElementById('sceneWin').classList.contains('show')) renderScenesTool();
     },
     // переключение/полное состояние сцены: фон+сетка+токены+туман
@@ -2197,6 +2208,10 @@
     applyGrid(store.scene.grid);        // пересобирает токены/фог под новую сетку
     renderDevTools();                   // кисти тумана зависят от fogEnabled
   }
+  // Заглушки панелей сценариев/сцен — наполняются в промптах 3-4. Объявлены, чтобы
+  // handlers scenario.list/scenario.switched могли их звать уже сейчас.
+  function renderScenarioBar() {}
+  function renderSceneBar() {}
   function renderScenesTool() {
     const body = document.getElementById('sceneBody');
     if (!body) return;

@@ -710,10 +710,65 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
     if mtype == "scenario.create":
         if not require_gm(room.members.get(member_id)):
             return
+        room.ensure_scene()                    # гарантируем, что активный мир валиден
         scid = "scenario_" + secrets.token_hex(3)
-        room.scenarios[scid] = new_scenario(scid, msg.get("name") or "Новый сценарий")
-        if not room.active_scenario_id:
-            room.active_scenario_id = scid
+        sid = "scene_" + secrets.token_hex(3)
+        scene = new_scene(sid, "Сцена 1")      # одна ПУСТАЯ дефолтная сцена (без токенов)
+        room.scenarios[scid] = new_scenario(
+            scid, msg.get("name") or "Новый сценарий", {sid: scene}, sid)
+        # просто добавляем — активный сценарий НЕ меняем
+        await room.broadcast({"type": "scenario.list", **room.scenario_list()})
+        room.persist_tokens()
+        return
+
+    if mtype == "scenario.switch":
+        if not require_gm(room.members.get(member_id)):
+            return
+        sc = room.scenarios.get(msg.get("scenarioId"))
+        if not sc:
+            return
+        room.active_scenario_id = sc["id"]
+        room.active_scene_id = next(iter(sc["scenes"]), None)   # активной — первая сцена
+        room.ensure_scene()                    # гарантирует сцену + валидный active
+        sc["activeSceneId"] = room.active_scene_id
+        await room.broadcast({"type": "scenario.switched", "scenarioId": sc["id"],
+                              "activeSceneId": room.active_scene_id,
+                              "scenes": room.scene_list()["scenes"]})
+        await room.broadcast({"type": "scene.switched", "sceneId": room.active_scene_id,
+                              "state": room.scene_state(room.active_scene_id)})
+        room.persist_tokens()
+        return
+
+    if mtype == "scenario.rename":
+        if not require_gm(room.members.get(member_id)):
+            return
+        sc = room.scenarios.get(msg.get("scenarioId"))
+        name = msg.get("name")
+        if not sc or not name:
+            return
+        sc["name"] = str(name)
+        await room.broadcast({"type": "scenario.list", **room.scenario_list()})
+        room.persist_tokens()
+        return
+
+    if mtype == "scenario.delete":
+        if not require_gm(room.members.get(member_id)):
+            return
+        scid = msg.get("scenarioId")
+        if scid not in room.scenarios or len(room.scenarios) <= 1:
+            return                             # нельзя удалить последний сценарий
+        was_active = room.active_scenario_id == scid
+        del room.scenarios[scid]
+        if was_active:                         # удалили активный — переключиться на другой
+            room.active_scenario_id = next(iter(room.scenarios))
+            room.active_scene_id = next(iter(room.scenarios[room.active_scenario_id]["scenes"]), None)
+            room.ensure_scene()
+            room.scenarios[room.active_scenario_id]["activeSceneId"] = room.active_scene_id
+            await room.broadcast({"type": "scenario.switched", "scenarioId": room.active_scenario_id,
+                                  "activeSceneId": room.active_scene_id,
+                                  "scenes": room.scene_list()["scenes"]})
+            await room.broadcast({"type": "scene.switched", "sceneId": room.active_scene_id,
+                                  "state": room.scene_state(room.active_scene_id)})
         await room.broadcast({"type": "scenario.list", **room.scenario_list()})
         room.persist_tokens()
         return
