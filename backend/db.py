@@ -162,6 +162,20 @@ def list_games() -> list[dict]:
              "gmId": r["gm_id"], "createdAt": r["created_at"]} for r in rows]
 
 
+def ensure_game(room_id: str, name: str | None = None, gm_id: str | None = None) -> bool:
+    """Создаёт игру (+ места), если её ещё нет. Идемпотентно. Нужно для ad-hoc/
+    песочница-комнат, которые открываются по WS/ссылке без лобби: без строки в
+    games у них ломаются ассеты (FK) и не пишется состояние. True, если создал."""
+    with connect() as conn:
+        if conn.execute("SELECT 1 FROM games WHERE room_id=?", (room_id,)).fetchone():
+            return False
+    try:
+        create_game(room_id, name or room_id, gm_id)
+        return True
+    except sqlite3.IntegrityError:
+        return False                 # гонка: кто-то создал параллельно — это ок
+
+
 def get_game_state(room_id: str) -> dict:
     """Читает games.state (редко меняющееся состояние сцены: токены, позиции,
     controlledBy). Пустой {}, если игры нет или state пуст/битый."""
