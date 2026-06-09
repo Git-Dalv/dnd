@@ -38,7 +38,8 @@ async def lifespan(app: FastAPI):
     db.init_db()
     # Песочница входит из лобби напрямую (минуя POST /api/games), поэтому
     # гарантируем её строку в games ВСЕГДА — иначе FK/ассеты падают. Идемпотентно.
-    db.ensure_game("room_sandbox", "Песочница", "gm")
+    # gm_id = 'dev' (член песочницы из lobby) → dev-владелец = gm песочницы (HTTP-права).
+    db.ensure_game("room_sandbox", "Песочница", "dev")
     content_catalog.load()
     yield
 
@@ -465,10 +466,11 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     await ws.accept()
     role = ws.query_params.get("role", "player")
     # Песочница самонастраивается при первом входе: строки в games может не быть
-    # (вход из лобби минует POST /api/games). ensure_game идемпотентна — для
-    # боевых игр это no-op. FK ассетов после этого удовлетворён.
+    # (вход из лобби минует POST /api/games). gm_id = member_id ('dev' из lobby) →
+    # dev-владелец становится gm песочницы (согласуется с правами на HTTP).
+    # ensure_game идемпотентна — для боевых игр и повторного входа это no-op.
     if room_id == "room_sandbox":
-        db.ensure_game(room_id, "Песочница", "gm")
+        db.ensure_game(room_id, "Песочница", member_id)
     room = get_room(room_id)
     seats = db.list_seats(room_id)
 
