@@ -103,16 +103,17 @@ CREATE TABLE IF NOT EXISTS dossiers (
 );
 CREATE INDEX IF NOT EXISTS idx_dossiers_room ON dossiers(room_id);
 
--- Бинарь карт (и в будущем токенов/портретов), привязан к игре. Картинки
--- ТЯЖЁЛЫЕ — храним в отдельной таблице, не в games.state, и отдаём по HTTP с
--- кэшем браузера (не гоняем через WebSocket-снапшоты).
+-- Ассеты мира (карты/токены/портреты). Картинки ТЯЖЁЛЫЕ — файл лежит на ДИСКЕ
+-- (data/assets/{room}/{file}), в БД только метаданные и ссылка (НЕ dataURL в
+-- состоянии — оно раздувает БД/снапшоты). Отдаются по HTTP со static-mount.
 CREATE TABLE IF NOT EXISTS assets (
     asset_id    TEXT PRIMARY KEY,
     room_id     TEXT NOT NULL REFERENCES games(room_id) ON DELETE CASCADE,
-    kind        TEXT NOT NULL,            -- 'map' (на будущее: 'token','portrait')
-    mime        TEXT NOT NULL,            -- image/png, image/jpeg, image/webp
-    width       INTEGER, height INTEGER,
-    bytes       BLOB NOT NULL,
+    name        TEXT NOT NULL,            -- человекочитаемое имя
+    kind        TEXT NOT NULL,            -- map | token | portrait
+    path        TEXT NOT NULL,            -- относительный путь файла ({room}/{file})
+    url         TEXT NOT NULL,            -- /assets/{room}/{file}
+    w INTEGER, h INTEGER,
     created_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_assets_room ON assets(room_id);
@@ -410,40 +411,55 @@ def free_seat(room_id: str, member_id: str):
                      "WHERE room_id=? AND member_id=?", (room_id, member_id))
 
 
-# ---- ассеты (бинарь карт) -------------------------------------------------
+# ---- ассеты (метаданные; файл лежит на диске data/assets/{room}/{file}) ----
 
-def save_asset(asset_id: str, room_id: str, kind: str, mime: str,
-               width: int | None, height: int | None, data: bytes) -> dict:
-    """Сохраняет бинарь (BLOB как есть, без base64). Возвращает метаданные без bytes."""
+def _asset_dict(r) -> dict:
+    return {"assetId": r["asset_id"], "roomId": r["room_id"], "name": r["name"],
+            "kind": r["kind"], "path": r["path"], "url": r["url"],
+            "w": r["w"], "h": r["h"], "createdAt": r["created_at"]}
+
+
+def create_asset(asset_id: str, room_id: str, name: str, kind: str,
+                 path: str, url: str, w: int | None, h: int | None) -> dict:
+    """Запись метаданных ассета (сам файл уже сохранён на диск вызывающим)."""
     now = int(time.time())
     with connect() as conn:
         conn.execute(
-            "INSERT INTO assets (asset_id, room_id, kind, mime, width, height, bytes, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
-            (asset_id, room_id, kind, mime, width, height, data, now),
+            "INSERT INTO assets (asset_id, room_id, name, kind, path, url, w, h, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (asset_id, room_id, name, kind, path, url, w, h, now),
         )
-    return {"assetId": asset_id, "roomId": room_id, "kind": kind, "mime": mime,
-            "width": width, "height": height, "createdAt": now}
+    return {"assetId": asset_id, "roomId": room_id, "name": name, "kind": kind,
+            "path": path, "url": url, "w": w, "h": h, "createdAt": now}
 
 
-def get_asset(asset_id: str):
-    """Строка ассета С bytes (для отдачи по HTTP) или None."""
+def get_asset(asset_id: str) -> dict | None:
     with connect() as conn:
-        return conn.execute("SELECT * FROM assets WHERE asset_id=?", (asset_id,)).fetchone()
+        row = conn.execute("SELECT * FROM assets WHERE asset_id=?", (asset_id,)).fetchone()
+    return _asset_dict(row) if row else None
 
 
 def list_assets(room_id: str, kind: str | None = None) -> list[dict]:
-    """Метаданные ассетов игры БЕЗ bytes — для библиотеки карт в редакторе."""
+    """Метаданные ассетов мира (для библиотеки карт). Файлы — на диске, тут ссылки."""
     with connect() as conn:
         if kind:
-            rows = conn.execute("SELECT asset_id, kind, mime, width, height, created_at "
-                                "FROM assets WHERE room_id=? AND kind=? ORDER BY created_at DESC",
+            rows = conn.execute("SELECT * FROM assets WHERE room_id=? AND kind=? ORDER BY created_at DESC",
                                 (room_id, kind)).fetchall()
         else:
-            rows = conn.execute("SELECT asset_id, kind, mime, width, height, created_at "
-                                "FROM assets WHERE room_id=? ORDER BY created_at DESC", (room_id,)).fetchall()
-    return [{"assetId": r["asset_id"], "kind": r["kind"], "mime": r["mime"],
-             "width": r["width"], "height": r["height"], "createdAt": r["created_at"]} for r in rows]
+            rows = conn.execute("SELECT * FROM assets WHERE room_id=? ORDER BY created_at DESC",
+                                (room_id,)).fetchall()
+    return [_asset_dict(r) for r in rows]
+
+
+def delete_asset(asset_id: str) -> str | None:
+    """Удаляет строку ассета. Возвращает path удалённого файла (чтобы вызывающий
+    стёр файл с диска) или None, если записи не было."""
+    with connect() as conn:
+        row = conn.execute("SELECT path FROM assets WHERE asset_id=?", (asset_id,)).fetchone()
+        if not row:
+            return None
+        conn.execute("DELETE FROM assets WHERE asset_id=?", (asset_id,))
+        return row["path"]
 
 
 if __name__ == "__main__":

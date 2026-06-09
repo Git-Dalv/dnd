@@ -4,3 +4,6 @@ __pycache__/
 
 # generated SQLite database (persistence layer) — not source
 data/vtt.db
+
+# uploaded world assets (maps/tokens/portraits) — files on disk, not source
+data/assets/

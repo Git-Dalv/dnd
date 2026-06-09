@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -44,6 +44,11 @@ app = FastAPI(lifespan=lifespan)
 
 # Прототип фронта лежит в docs/. Отдаём его как статику.
 DOCS_DIR = Path(__file__).resolve().parent.parent / "docs"
+
+# Ассеты мира (карты/токены/портреты) — файлы на диске, раздаются static-mount'ом.
+# Каталог создаём заранее: StaticFiles при монтировании требует существующую папку.
+ASSETS_DIR = Path(__file__).resolve().parent.parent / "data" / "assets"
+ASSETS_DIR.mkdir(parents=True, exist_ok=True)
 
 DICE_RE = re.compile(r"^\s*(\d+)\s*d\s*(\d+)\s*$", re.I)
 
@@ -1061,50 +1066,87 @@ def api_catalog():
     return content_catalog.snapshot()
 
 
-MAX_ASSET_BYTES = 12 * 1024 * 1024   # 12 МБ — карты тяжёлые, но не безразмерные
+MAX_ASSET_BYTES = 20 * 1024 * 1024   # 20 МБ — карты тяжёлые, но не безразмерные
+EXT_BY_MIME = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 
 
 def _game_exists(room_id: str) -> bool:
     return any(g["roomId"] == room_id for g in db.list_games())
 
 
+def _image_size(data: bytes):
+    """Размеры картинки (w, h) из заголовков PNG/JPEG/WEBP без зависимостей.
+    Не распознали — (None, None) (размеры не критичны, как и сказано в задаче)."""
+    try:
+        if data[:8] == b"\x89PNG\r\n\x1a\n" and len(data) >= 24:
+            return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+        if data[:2] == b"\xff\xd8":                       # JPEG: ищем SOF-маркер
+            i, n = 2, len(data)
+            while i + 9 < n:
+                if data[i] != 0xFF:
+                    i += 1
+                    continue
+                marker = data[i + 1]
+                if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                    return (int.from_bytes(data[i + 7:i + 9], "big"),
+                            int.from_bytes(data[i + 5:i + 7], "big"))
+                i += 2 + int.from_bytes(data[i + 2:i + 4], "big")
+        if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            fmt = data[12:16]
+            if fmt == b"VP8X":
+                return (int.from_bytes(data[24:27], "little") + 1,
+                        int.from_bytes(data[27:30], "little") + 1)
+            if fmt == b"VP8 ":
+                return (int.from_bytes(data[26:28], "little") & 0x3FFF,
+                        int.from_bytes(data[28:30], "little") & 0x3FFF)
+    except Exception:
+        pass
+    return None, None
+
+
 @app.post("/api/games/{room_id}/assets")
-async def api_upload_asset(room_id: str, request: Request):
-    # Загрузка карты-картинки. Доступна В РАМКАХ игры (room-scoped): редактор сцен —
-    # инструмент мастера, песочница/стол открыты как gm. Тяжёлый бинарь идёт по
-    # HTTP (не через WS-снапшоты). Тело — сырые байты файла, mime — из Content-Type,
-    # размеры — из query (клиент знает их после canvas).
+async def api_upload_asset(room_id: str, file: UploadFile = File(...),
+                           name: str = Form(""), kind: str = Form("map")):
+    # Загрузка картинки мира: файл на ДИСК (data/assets/{room}/{file}), в БД —
+    # только метаданные+ссылка. Тяжёлый бинарь по HTTP (не через WS-снапшоты).
+    # TODO: проверка прав (gm) — пока открыто для «себя с друзьями».
     if not _game_exists(room_id):
         raise HTTPException(status_code=404, detail="game not found")
-    data = await request.body()
+    mime = (file.content_type or "").split(";")[0].strip()
+    ext = EXT_BY_MIME.get(mime)
+    if not ext:
+        raise HTTPException(status_code=415, detail="image png/jpeg/webp required")
+    data = await file.read()
     if not data:
-        raise HTTPException(status_code=400, detail="empty body")
+        raise HTTPException(status_code=400, detail="empty file")
     if len(data) > MAX_ASSET_BYTES:
         raise HTTPException(status_code=413, detail="asset too large")
-    mime = request.headers.get("content-type", "application/octet-stream").split(";")[0].strip()
-    if not mime.startswith("image/"):
-        raise HTTPException(status_code=415, detail="image required")
-
-    def _int(v):
-        try:
-            return int(v)
-        except (TypeError, ValueError):
-            return None
-    q = request.query_params
+    if kind not in ("map", "token", "portrait"):
+        kind = "map"
     asset_id = "asset_" + secrets.token_hex(6)
-    meta = db.save_asset(asset_id, room_id, q.get("kind", "map"), mime,
-                         _int(q.get("width")), _int(q.get("height")), data)
-    return {"assetId": asset_id, "width": meta["width"], "height": meta["height"], "mime": mime}
+    room_dir = ASSETS_DIR / room_id
+    room_dir.mkdir(parents=True, exist_ok=True)
+    fname = f"{asset_id}.{ext}"
+    (room_dir / fname).write_bytes(data)
+    rel = f"{room_id}/{fname}"                # относительный путь от ASSETS_DIR
+    url = f"/assets/{rel}"
+    w, h = _image_size(data)
+    return db.create_asset(asset_id, room_id, name or fname, kind, rel, url, w, h)
 
 
-@app.get("/api/games/{room_id}/assets/{asset_id}")
-def api_get_asset(room_id: str, asset_id: str):
-    # Отдача карты: id уникален на контент → кэшируем агрессивно (immutable).
-    row = db.get_asset(asset_id)
-    if not row or row["room_id"] != room_id:
+@app.delete("/api/games/{room_id}/assets/{asset_id}")
+def api_delete_asset(room_id: str, asset_id: str):
+    # Удаляем запись и файл с диска. TODO: проверка прав (gm).
+    meta = db.get_asset(asset_id)
+    if not meta or meta["roomId"] != room_id:
         raise HTTPException(status_code=404, detail="asset not found")
-    return Response(content=row["bytes"], media_type=row["mime"],
-                    headers={"Cache-Control": "public, max-age=31536000, immutable"})
+    path = db.delete_asset(asset_id)
+    if path:
+        try:
+            (ASSETS_DIR / path).unlink(missing_ok=True)
+        except OSError:
+            pass
+    return {"ok": True, "assetId": asset_id}
 
 
 @app.get("/api/games/{room_id}/assets")
@@ -1160,6 +1202,10 @@ def api_list_seats(room_id: str):
 def index():
     return FileResponse(DOCS_DIR / "prototype.html")
 
+
+# Файлы ассетов мира (карты/токены/портреты) — отдаём с диска. ВАЖНО: монтируем
+# ДО корневого "/", иначе корневой mount перехватит /assets/*.
+app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
 
 # Остальные файлы docs/ (схемы, эскизы) — статикой. Mount на "/" ловит всё,
 # что не совпало с маршрутами выше (включая /ws — он остаётся нетронутым).
