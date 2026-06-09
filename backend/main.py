@@ -380,6 +380,9 @@ def get_room(room_id: str) -> Room:
     room = rooms.get(room_id)
     if room is None:
         room = Room(room_id=room_id)
+        # ad-hoc/песочница-комната (вход по ссылке без лобби) — заводим игру в БД,
+        # чтобы её состояние/ассеты персистились как у обычной игры.
+        db.ensure_game(room_id)
         # если игра уже есть в БД — поднимаем её метаданные (места берём из БД по запросу)
         for g in db.list_games():
             if g["roomId"] == room_id:
@@ -1100,10 +1103,6 @@ MAX_ASSET_BYTES = 20 * 1024 * 1024   # 20 МБ — карты тяжёлые, н
 EXT_BY_MIME = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 
 
-def _game_exists(room_id: str) -> bool:
-    return any(g["roomId"] == room_id for g in db.list_games())
-
-
 def _image_size(data: bytes):
     """Размеры картинки (w, h) из заголовков PNG/JPEG/WEBP без зависимостей.
     Не распознали — (None, None) (размеры не критичны, как и сказано в задаче)."""
@@ -1140,8 +1139,9 @@ async def api_upload_asset(room_id: str, file: UploadFile = File(...),
     # Загрузка картинки мира: файл на ДИСК (data/assets/{room}/{file}), в БД —
     # только метаданные+ссылка. Тяжёлый бинарь по HTTP (не через WS-снапшоты).
     # TODO: проверка прав (gm) — пока открыто для «себя с друзьями».
-    if not _game_exists(room_id):
-        raise HTTPException(status_code=404, detail="game not found")
+    # Ad-hoc/песочница-комнаты (открытые по ссылке без лобби) не имеют строки в
+    # games → FK ассета бы упал; заводим игру лениво, чтобы загрузка работала.
+    db.ensure_game(room_id)
     mime = (file.content_type or "").split(";")[0].strip()
     ext = EXT_BY_MIME.get(mime)
     if not ext:
