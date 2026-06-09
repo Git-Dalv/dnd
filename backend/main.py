@@ -36,6 +36,9 @@ content_catalog = Catalog()
 async def lifespan(app: FastAPI):
     # БД поднимаем при старте — это «полка», с которой комнаты встают после рестарта.
     db.init_db()
+    # Песочница входит из лобби напрямую (минуя POST /api/games), поэтому
+    # гарантируем её строку в games ВСЕГДА — иначе FK/ассеты падают. Идемпотентно.
+    db.ensure_game("room_sandbox", "Песочница", "gm")
     content_catalog.load()
     yield
 
@@ -380,9 +383,6 @@ def get_room(room_id: str) -> Room:
     room = rooms.get(room_id)
     if room is None:
         room = Room(room_id=room_id)
-        # ad-hoc/песочница-комната (вход по ссылке без лобби) — заводим игру в БД,
-        # чтобы её состояние/ассеты персистились как у обычной игры.
-        db.ensure_game(room_id)
         # если игра уже есть в БД — поднимаем её метаданные (места берём из БД по запросу)
         for g in db.list_games():
             if g["roomId"] == room_id:
@@ -465,6 +465,11 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     await ws.accept()
     role = ws.query_params.get("role", "player")
     name = ws.query_params.get("name", member_id)
+    # Песочница самонастраивается при первом входе: строки в games может не быть
+    # (вход из лобби минует POST /api/games). ensure_game идемпотентна — для
+    # боевых игр это no-op. FK ассетов после этого удовлетворён.
+    if room_id == "room_sandbox":
+        db.ensure_game(room_id, "Песочница", "gm")
     room = get_room(room_id)
     member = Member(member_id, name, role, ws)
     room.members[member_id] = member
@@ -1103,6 +1108,10 @@ MAX_ASSET_BYTES = 20 * 1024 * 1024   # 20 МБ — карты тяжёлые, н
 EXT_BY_MIME = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 
 
+def _game_exists(room_id: str) -> bool:
+    return any(g["roomId"] == room_id for g in db.list_games())
+
+
 def _image_size(data: bytes):
     """Размеры картинки (w, h) из заголовков PNG/JPEG/WEBP без зависимостей.
     Не распознали — (None, None) (размеры не критичны, как и сказано в задаче)."""
@@ -1139,9 +1148,10 @@ async def api_upload_asset(room_id: str, file: UploadFile = File(...),
     # Загрузка картинки мира: файл на ДИСК (data/assets/{room}/{file}), в БД —
     # только метаданные+ссылка. Тяжёлый бинарь по HTTP (не через WS-снапшоты).
     # TODO: проверка прав (gm) — пока открыто для «себя с друзьями».
-    # Ad-hoc/песочница-комнаты (открытые по ссылке без лобби) не имеют строки в
-    # games → FK ассета бы упал; заводим игру лениво, чтобы загрузка работала.
-    db.ensure_game(room_id)
+    # Проверка наличия игры — ПРАВИЛЬНАЯ (FK): игра должна существовать. Песочница
+    # самонастраивается на старте/входе (lifespan + ws_endpoint), поэтому проходит.
+    if not _game_exists(room_id):
+        raise HTTPException(status_code=404, detail="game not found")
     mime = (file.content_type or "").split(";")[0].strip()
     ext = EXT_BY_MIME.get(mime)
     if not ext:
