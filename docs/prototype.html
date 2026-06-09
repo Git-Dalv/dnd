@@ -394,11 +394,11 @@
     text-transform: uppercase; padding-right: 10px; border-right: 1px solid var(--edge); align-self: stretch;
     display: flex; align-items: center; max-width: 70px; }
   .dm-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
-    width: 96px; height: 82px; border-radius: 7px; cursor: pointer; font-size: 26px;
+    width: 96px; height: 82px; border-radius: 7px; cursor: pointer; text-align: center;
     background: linear-gradient(160deg, var(--panel-2), #181309); border: 1px solid var(--edge-bright); color: var(--ink);
     transition: transform .12s, border-color .12s, box-shadow .12s; }
   .dm-btn:hover { border-color: var(--gold); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(201,162,83,.3); }
-  .dm-btn .lbl { font-size: 11px; font-family: 'Cinzel'; color: var(--ink-dim); }
+  .dm-btn .lbl { font-size: 14px; font-family: 'Cinzel'; letter-spacing: .04em; color: var(--gold-bright); }
 
   /* правая панель ресурсов (из store.character.resources, не хардкод) */
   .hb-res { align-self: stretch; display: flex; gap: 16px; padding-left: 14px; border-left: 1px solid var(--edge);
@@ -419,6 +419,11 @@
   .win-back { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center;
     justify-content: center; z-index: 120; padding: 24px; }
   .win-back.show { display: flex; }
+  /* плавающие окна-инструменты: без затемнения, фон кликабелен (токены двигаются
+     под окном), закрытие только крестиком. Подложка прозрачна для кликов, само
+     окно — нет. */
+  .win-back.floating { background: none; pointer-events: none; }
+  .win-back.floating .win { pointer-events: auto; }
   .win { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--gold);
     border-radius: 9px; width: 100%; max-width: 560px; max-height: 80vh; display: flex; flex-direction: column;
     box-shadow: 0 14px 44px rgba(0,0,0,.8); overflow: hidden; }
@@ -658,10 +663,10 @@
       <!-- пульт мастера: каркас под этапы 1–4 (кнопки-заглушки, без логики) -->
       <div class="dm-console" id="dmConsole">
         <div class="dm-title">Пульт мастера</div>
-        <div class="dm-btn" data-dm="check">🎲<span class="lbl">Проверка</span></div>
-        <div class="dm-btn" data-dm="npc">👹<span class="lbl">NPC</span></div>
-        <div class="dm-btn" data-dm="scene">🗺<span class="lbl">Сцена</span></div>
-        <div class="dm-btn" data-dm="combat">⚔<span class="lbl">Режим боя</span></div>
+        <div class="dm-btn" data-dm="check"><span class="lbl">Проверка</span></div>
+        <div class="dm-btn" data-dm="npc"><span class="lbl">NPC</span></div>
+        <div class="dm-btn" data-dm="scene"><span class="lbl">Сцена</span></div>
+        <div class="dm-btn" data-dm="combat"><span class="lbl">Режим боя</span></div>
       </div>
     </div>
   </div>
@@ -714,7 +719,7 @@
 </div>
 
 <!-- Окна бара: книга способностей / инвентарь / персонаж (независимы от модалки GM) -->
-<div class="win-back" id="spellsWin">
+<div class="win-back floating" id="spellsWin">
   <div class="win">
     <div class="win-head">
       <h3>📖 Книга способностей</h3>
@@ -724,7 +729,7 @@
     <div class="win-body" id="spellsBody"></div>
   </div>
 </div>
-<div class="win-back" id="invWin">
+<div class="win-back floating" id="invWin">
   <div class="win">
     <div class="win-head">
       <h3>🎒 Инвентарь</h3>
@@ -733,7 +738,7 @@
     <div class="win-body" id="invBody"></div>
   </div>
 </div>
-<div class="win-back" id="charWin">
+<div class="win-back floating" id="charWin">
   <div class="win">
     <div class="win-head">
       <h3>📜 Персонаж</h3>
@@ -743,7 +748,7 @@
   </div>
 </div>
 <!-- мини-лист NPC (открывается кликом по фишке; рендер тот же sheetHtml) -->
-<div class="win-back" id="npcWin">
+<div class="win-back floating" id="npcWin">
   <div class="win">
     <div class="win-head">
       <h3>👹 Статблок</h3>
@@ -783,7 +788,7 @@
   </div>
 </div>
 <!-- сцены песочницы: список/переключение/создание/фон -->
-<div class="win-back" id="sceneWin">
+<div class="win-back floating" id="sceneWin">
   <div class="win">
     <div class="win-head">
       <h3>🗺 Сцены</h3>
@@ -809,7 +814,7 @@
   </div>
 </div>
 <!-- приватные заметки мастера (видны только GM, хранятся в БД) -->
-<div class="win-back" id="notesWin">
+<div class="win-back floating" id="notesWin">
   <div class="win">
     <div class="win-head">
       <h3>📝 Заметки мастера</h3>
@@ -819,7 +824,7 @@
   </div>
 </div>
 <!-- лор мира: общая история + заметки о мире (видны всем; правит GM) -->
-<div class="win-back" id="worldLoreWin">
+<div class="win-back floating" id="worldLoreWin">
   <div class="win">
     <div class="win-head">
       <h3>🌍 О мире</h3>
@@ -1894,6 +1899,37 @@
     };
   }
 
+  // Перетаскивание окна за шапку. Позиция — ЛОКАЛЬНАЯ (transform translate в
+  // замыкании, НЕ в store). Клампим, чтобы шапка не ушла за экран. Работает и для
+  // модальных, и для плавающих окон; позиция помнится между открытиями.
+  function makeDraggable(win, handleSel) {
+    if (!win) return;
+    const handle = win.querySelector(handleSel || '.win-head');
+    if (!handle) return;
+    handle.style.cursor = 'move';
+    let dx = 0, dy = 0, sx = 0, sy = 0, baseL = 0, baseT = 0, w = 0, on = false;
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.win-x')) return;        // крестик не таскает
+      on = true; sx = e.clientX; sy = e.clientY;
+      const r = win.getBoundingClientRect();
+      baseL = r.left - dx; baseT = r.top - dy; w = r.width;
+      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!on) return;
+      dx += e.clientX - sx; dy += e.clientY - sy; sx = e.clientX; sy = e.clientY;
+      const vw = window.innerWidth, vh = window.innerHeight, M = 80;
+      const left = Math.max(M - w, Math.min(vw - M, baseL + dx));  // часть окна видна по гориз.
+      const top = Math.max(0, Math.min(vh - 40, baseT + dy));       // шапка всегда видна
+      dx = left - baseL; dy = top - baseT;
+      win.style.transform = `translate(${dx}px, ${dy}px)`;
+    });
+    const end = (e) => { on = false; try { handle.releasePointerCapture(e.pointerId); } catch (_) {} };
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  }
+
   // Лор мира: «О мире» — общая история + заметки о мире. Видны ВСЕМ (read-only
   // игрокам), правит только GM (по blur и кнопке Сохранить → lore.set). В store
   // не пишем сами — ждём world.lore от сервера (как notes/scene.*).
@@ -2173,6 +2209,9 @@
   renderMode();
   let scenarioMenuOpen = false;   // объявлено ДО первого renderScenarioBar() (TDZ)
   renderScenarioBar();   // пустой пикер до прихода scenario.list
+  // перетаскивание всех окон за шапку (модальных и плавающих) + бара сцен
+  document.querySelectorAll('.win').forEach(w => makeDraggable(w));
+  makeDraggable(document.getElementById('sceneBar'), '.scene-bar-head');
   // renderFog() — после объявления GRID, в секции карты (см. ниже)
 
   // ростер персонажей (имена для подписей партии) — read-only из лобби-API
@@ -2307,11 +2346,11 @@
   function renderMapBg() {
     const bg = document.getElementById('mapBg');
     if (!bg) return;
-    // приоритет — загруженный PNG (assets), иначе путь из библиотеки
+    // приоритет — карта dataURL/путь из сцены, иначе загруженный PNG (assets)
     let url = null;
-    if (store.scene.mapAssetId) url = `/api/games/${encodeURIComponent(net.room)}/assets/${store.scene.mapAssetId}`;
-    else if (store.scene.map) url = store.scene.map;
-    bg.style.backgroundImage = url ? `url(${url})` : 'none';
+    if (store.scene.map) url = store.scene.map;
+    else if (store.scene.mapAssetId) url = `/api/games/${encodeURIComponent(net.room)}/assets/${store.scene.mapAssetId}`;
+    bg.style.backgroundImage = url ? `url("${url}")` : 'none';
   }
   function applyGrid(grid) {
     GRID = (grid && grid.size) || 48;
@@ -2570,11 +2609,13 @@
 
   // окно параметров сцены (создание sceneId=null / редактирование активной)
   let sceneParamAssetId = null;   // загруженный mapAssetId (ожидает сохранения)
+  let sceneParamMapData = null;   // dataURL выбранной карты (локально, до отправки)
   function openSceneParams(sceneId) {
     const editing = !!sceneId;
     const s = editing ? store.scene : { map: null, mapAssetId: null, fogEnabled: false, notes: '', searchKey: '', description: '', grid: { size: 48 } };
     const name = editing ? (store.scenes.find(x => x.id === sceneId) || {}).name || '' : '';
     sceneParamAssetId = s.mapAssetId || null;
+    sceneParamMapData = s.map || null;     // текущий фон (dataURL/путь) — пока не меняли
     const body = document.getElementById('sceneParamsBody');
     body.innerHTML = `
       <label>Имя сцены</label><input id="sp-name" value="${esc(name)}" placeholder="Пещера гоблинов">
@@ -2593,15 +2634,29 @@
       </div>`;
     const prev = document.getElementById('sp-prev');
     const showPrev = () => {
-      const url = sceneParamAssetId ? `/api/games/${encodeURIComponent(net.room)}/assets/${sceneParamAssetId}` : (s.map || null);
-      prev.style.backgroundImage = url ? `url(${url})` : 'none';
+      const url = sceneParamMapData
+        || (sceneParamAssetId ? `/api/games/${encodeURIComponent(net.room)}/assets/${sceneParamAssetId}` : null);
+      prev.style.backgroundImage = url ? `url("${url}")` : 'none';
     };
     showPrev();
-    document.getElementById('sp-map').onchange = (e) => uploadSceneMap(e.target.files[0], showPrev);
+    document.getElementById('sp-map').onchange = async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      try {
+        // Карта едет dataURL'ом В scene.config (источник истины — сервер), а не
+        // в assets-эндпоинт (он требует игру в БД и 404'ит прототип-комнаты).
+        // Сжимаем до ~1600px / jpeg 0.82, чтобы dataURL пролез по WebSocket.
+        sceneParamMapData = await compressImageToDataURL(f, 1600, 0.82);
+        sceneParamAssetId = null;                 // dataURL заменяет старый asset
+        console.log('[scene] map dataURL length =', sceneParamMapData.length);
+        showPrev();
+      } catch (err) { console.warn('[scene] не удалось обработать карту', err); }
+    };
     document.getElementById('sp-cancel').onclick = () => document.getElementById('sceneParamsWin').classList.remove('show');
     document.getElementById('sp-save').onclick = () => {
       const payload = {
         name: document.getElementById('sp-name').value.trim() || 'Сцена',
+        map: sceneParamMapData || null,            // dataURL карты (источник истины — сервер)
         mapAssetId: sceneParamAssetId || null,
         grid: { size: parseInt(document.getElementById('sp-grid').value, 10) || 48 },
         fogEnabled: document.getElementById('sp-fog').checked,
@@ -2616,21 +2671,26 @@
     };
     document.getElementById('sceneParamsWin').classList.add('show');
   }
-  // загрузка карты в assets: узнаём размеры через Image, шлём байты по HTTP
-  function uploadSceneMap(file, after) {
-    if (!file) return;
-    const img = new Image();
-    img.onload = async () => {
-      try {
-        const url = `/api/games/${encodeURIComponent(net.room)}/assets?kind=map&width=${img.naturalWidth}&height=${img.naturalHeight}`;
-        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': file.type }, body: file });
-        if (!res.ok) throw new Error('http ' + res.status);
-        sceneParamAssetId = (await res.json()).assetId;
-        if (after) after();
-      } catch (e) { /* тихо: можно повторить выбор файла */ }
-      URL.revokeObjectURL(img.src);
-    };
-    img.src = URL.createObjectURL(file);
+  // Сжать выбранный файл карты в dataURL: ≤ maxSide по большей стороне, jpeg
+  // quality. Маленький dataURL едет в scene.config (а не в assets-эндпоинт),
+  // поэтому работает и для прототип-комнат без строки в БД.
+  function compressImageToDataURL(file, maxSide, quality) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.naturalWidth, h = img.naturalHeight;
+        const scale = Math.min(1, maxSide / Math.max(w, h));
+        w = Math.max(1, Math.round(w * scale));
+        h = Math.max(1, Math.round(h * scale));
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(img.src);
+        resolve(cv.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => { URL.revokeObjectURL(img.src); reject(new Error('image load failed')); };
+      img.src = URL.createObjectURL(file);
+    });
   }
   function openGridTool() {
     const g = store.scene.grid || { size: 48, offsetX: 0, offsetY: 0 };
