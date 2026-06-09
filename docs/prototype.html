@@ -95,6 +95,16 @@
   /* фон активной сцены (картинка из библиотеки) — под сеткой/туманом/токенами */
   .map-bg { position: absolute; top: 0; left: 0; width: 3000px; height: 2000px; pointer-events: none;
     background-repeat: no-repeat; background-size: contain; background-position: top left; }
+  /* рамка подгонки фона (режим «Подогнать карту», только GM): в координатах мира */
+  .map-fit { position: absolute; top: 0; left: 0; display: none; box-sizing: border-box;
+    border: 2px dashed var(--gold-bright); pointer-events: none; z-index: 6; }
+  .map-fit.on { display: block; pointer-events: auto; cursor: move; }
+  .map-fit-h { position: absolute; width: 14px; height: 14px; background: var(--gold-bright);
+    border: 1px solid #1a140a; border-radius: 2px; pointer-events: auto; }
+  .map-fit-h[data-corner="tl"] { left: -8px; top: -8px; cursor: nwse-resize; }
+  .map-fit-h[data-corner="tr"] { right: -8px; top: -8px; cursor: nesw-resize; }
+  .map-fit-h[data-corner="bl"] { left: -8px; bottom: -8px; cursor: nesw-resize; }
+  .map-fit-h[data-corner="br"] { right: -8px; bottom: -8px; cursor: nwse-resize; }
   /* туман войны: слой под токенами; скрытые клетки — тёмные квадраты */
   .fog-layer { position: absolute; top: 0; left: 0; pointer-events: none; }
   .fog-cell { position: absolute; width: var(--grid); height: var(--grid); background: rgba(8,6,4,.94); }
@@ -602,7 +612,7 @@
       <!-- viewport обрезает, world таскается/масштабируется внутри -->
       <div class="map-viewport" id="mapViewport">
         <!-- токены создаёт renderTokens() из mapTokens (клетки -> пиксели) -->
-        <div class="map-world" id="mapWorld"><div class="map-bg" id="mapBg"></div><div class="fog-layer" id="fogLayer"></div></div>
+        <div class="map-world" id="mapWorld"><div class="map-bg" id="mapBg"></div><div class="fog-layer" id="fogLayer"></div><div class="map-fit" id="mapFit"><div class="map-fit-h" data-corner="tl"></div><div class="map-fit-h" data-corner="tr"></div><div class="map-fit-h" data-corner="bl"></div><div class="map-fit-h" data-corner="br"></div></div></div>
       </div>
       <div class="zoom-ctl">
         <button id="zoomIn" title="Приблизить">+</button>
@@ -2363,16 +2373,108 @@
   }
 
   // ---- сцены (S5/SC3): фон-карта (из assets), сетка, туман, мета ----
+  // mapTransform {x,y,scale} — состояние СЦЕНЫ (источник истины сервер), общее
+  // для всех; НЕ путать с локальным пан/зумом вида. fitMode/fitTransform —
+  // ЛОКАЛЬНЫЙ рабочий черновик подгонки (оптимистичный предпросмотр), финал шлём
+  // на сервер и применяем по scene.updated.
+  let fitMode = false;
+  let fitTransform = { x: 0, y: 0, scale: 1 };
+  let fitGrid = { size: 48, offsetX: 0, offsetY: 0 };
+  let _mapNat = { url: null, w: 1000, h: 700 };   // натуральные размеры текущей карты
+  let mapZoom = () => 1;                            // даётся IIFE карты (view.zoom)
+
+  // живой предпросмотр редактирования: окно сцены открыто для АКТИВНОЙ сцены
+  function paramsLiveFit() {
+    const win = document.getElementById('sceneParamsWin');
+    return !!(win && win.classList.contains('show') && sceneParamSceneId && sceneParamSceneId === store.activeSceneId);
+  }
+  function curMapTransform() {
+    return (fitMode || paramsLiveFit()) ? fitTransform : (store.scene.mapTransform || { x: 0, y: 0, scale: 1 });
+  }
+  function mapUrl() {
+    if (store.scene.map) return store.scene.map;
+    if (store.scene.mapAssetId) return `/api/games/${encodeURIComponent(net.room)}/assets/${store.scene.mapAssetId}`;
+    return null;
+  }
   function renderMapBg() {
     const bg = document.getElementById('mapBg');
     if (!bg) return;
-    // фон сцены — ССЫЛКА на ассет мира (store.scene.map = url "/assets/..."),
-    // не dataURL. mapAssetId оставлен фолбэком для старых записей.
-    let url = null;
-    if (store.scene.map) url = store.scene.map;
-    else if (store.scene.mapAssetId) url = `/api/games/${encodeURIComponent(net.room)}/assets/${store.scene.mapAssetId}`;
-    console.log('[map] renderMapBg: store.scene.map =', store.scene.map, '→ background-image url =', url);
-    bg.style.backgroundImage = url ? `url("${url}")` : 'none';
+    const url = mapUrl();
+    const t = curMapTransform();
+    console.log('[map] renderMapBg: map =', store.scene.map, '| mapTransform =', t);
+    if (!url) { bg.style.backgroundImage = 'none'; bg.style.transform = 'none'; renderMapFit(); return; }
+    bg.style.backgroundImage = `url("${url}")`;
+    bg.style.backgroundSize = '100% 100%';        // фон тянется на размер div (= натур. размер × scale)
+    bg.style.transformOrigin = '0 0';
+    const place = (w, h) => {
+      bg.style.width = w + 'px'; bg.style.height = h + 'px';
+      bg.style.transform = `translate(${t.x}px, ${t.y}px) scale(${t.scale})`;
+      renderMapFit();
+    };
+    if (_mapNat.url === url) place(_mapNat.w, _mapNat.h);
+    else {
+      place(_mapNat.w, _mapNat.h);                // временно прошлый размер — без мигания
+      const img = new Image();
+      img.onload = () => { _mapNat = { url, w: img.naturalWidth || 1000, h: img.naturalHeight || 700 }; place(_mapNat.w, _mapNat.h); };
+      img.src = url;
+    }
+  }
+  // рамка подгонки (в координатах мира, внутри #mapWorld — едет с паном/зумом)
+  function renderMapFit() {
+    const fit = document.getElementById('mapFit');
+    if (!fit) return;
+    if (!fitMode || !mapUrl()) { fit.classList.remove('on'); return; }
+    const t = fitTransform;
+    fit.classList.add('on');
+    fit.style.left = t.x + 'px'; fit.style.top = t.y + 'px';
+    fit.style.width = (_mapNat.w * t.scale) + 'px';
+    fit.style.height = (_mapNat.h * t.scale) + 'px';
+  }
+  // двусторонняя связь с числовыми полями (если окно сцены открыто). Не трогаем
+  // поле, в котором сейчас курсор, чтобы не мешать вводу.
+  function syncFitFields() {
+    const set = (id, v) => { const el = document.getElementById(id); if (el && document.activeElement !== el) el.value = v; };
+    set('sp-mt-scale', Math.round(fitTransform.scale * 100));
+    set('sp-mt-x', Math.round(fitTransform.x));
+    set('sp-mt-y', Math.round(fitTransform.y));
+    set('sp-grid', fitGrid.size);
+    set('sp-goffx', fitGrid.offsetX);
+    set('sp-goffy', fitGrid.offsetY);
+  }
+  // отправить подгонку серверу (источник истины). Локально только предпросмотр.
+  let _fitSendTimer = null;
+  function sendFitConfig() {
+    if (!store.activeSceneId) return;
+    net.send({
+      type: 'scene.config', sceneId: store.activeSceneId,
+      mapTransform: { x: Math.round(fitTransform.x), y: Math.round(fitTransform.y), scale: +(+fitTransform.scale).toFixed(4) },
+      grid: { size: fitGrid.size, offsetX: fitGrid.offsetX, offsetY: fitGrid.offsetY },
+    });
+  }
+  function sendFitConfigDebounced() { clearTimeout(_fitSendTimer); _fitSendTimer = setTimeout(sendFitConfig, 200); }
+  // тумблер режима подгонки: окно сцены делаем плавающим, чтобы стол был доступен
+  function setFitMode(on) {
+    fitMode = !!on;
+    // fitTransform/fitGrid уже засеяны openSceneParams и отражают живые правки —
+    // НЕ перезатираем их из store при тумблере (иначе теряем не-эхнутые изменения).
+    const win = document.getElementById('sceneParamsWin');
+    if (win) win.classList.toggle('floating', fitMode);   // плавающее → стол кликабелен
+    const btn = document.getElementById('sp-fit-toggle');
+    if (btn) { btn.classList.toggle('on', fitMode); btn.textContent = fitMode ? 'Готово (тащите карту/углы, сетка поверх)' : 'Подогнать карту'; }
+    renderMapBg(); renderMapFit(); syncFitFields();
+  }
+  // числовые поля → черновик подгонки (+ предпросмотр + отправка)
+  function fitFromFields() {
+    const num = (id, d) => { const v = parseFloat(document.getElementById(id) && document.getElementById(id).value); return isNaN(v) ? d : v; };
+    fitTransform.scale = Math.max(0.05, num('sp-mt-scale', 100) / 100);
+    fitTransform.x = num('sp-mt-x', fitTransform.x);
+    fitTransform.y = num('sp-mt-y', fitTransform.y);
+    fitGrid.size = Math.max(8, Math.round(num('sp-grid', fitGrid.size)));
+    fitGrid.offsetX = Math.round(num('sp-goffx', 0));
+    fitGrid.offsetY = Math.round(num('sp-goffy', 0));
+    renderMapBg(); renderMapFit();
+    applyGrid(fitGrid);                            // живой предпросмотр сетки поверх карты
+    sendFitConfigDebounced();
   }
   function applyGrid(grid) {
     GRID = (grid && grid.size) || 48;
@@ -2387,9 +2489,16 @@
     store.scene = {
       map: state.map || null, mapAssetId: state.mapAssetId || null,
       grid: state.grid || { size: 48, offsetX: 0, offsetY: 0 },
+      mapTransform: state.mapTransform || { x: 0, y: 0, scale: 1 },
       fogEnabled: !!state.fogEnabled, notes: state.notes || '',
       searchKey: state.searchKey || '', description: state.description || '',
     };
+    // в режиме подгонки держим черновик в согласии с серверным фактом
+    if (fitMode) {
+      fitTransform = Object.assign({ x: 0, y: 0, scale: 1 }, store.scene.mapTransform);
+      fitGrid = Object.assign({ size: 48, offsetX: 0, offsetY: 0 }, store.scene.grid);
+      syncFitFields();
+    }
   }
   function applyScene(state) {
     store.tokens = state.tokens || [];
@@ -2618,13 +2727,12 @@
       }, 'image/png');
     };
 
-    const mapUrl = store.scene.map
-      || (store.scene.mapAssetId ? `/api/games/${encodeURIComponent(net.room)}/assets/${store.scene.mapAssetId}` : null);
-    if (mapUrl) {
+    const bgUrl = mapUrl();          // тот же источник, что у renderMapBg
+    if (bgUrl) {
       const img = new Image();
       img.onload = () => { ctx.drawImage(img, 0, 0, W, H); drawRest(); };
       img.onerror = drawRest;
-      img.src = mapUrl;
+      img.src = bgUrl;
     } else drawRest();
   }
 
@@ -2640,6 +2748,27 @@
     const name = editing ? (store.scenes.find(x => x.id === sceneId) || {}).name || '' : '';
     sceneParamMap = s.map || null;     // текущий фон (url) — пока не меняли
     sceneParamSceneId = sceneId || null;
+    const g = s.grid || { size: 48, offsetX: 0, offsetY: 0 };
+    const mt = s.mapTransform || { x: 0, y: 0, scale: 1 };
+    // черновик подгонки = текущее состояние сцены (живой предпросмотр редактирования)
+    fitTransform = { x: mt.x || 0, y: mt.y || 0, scale: mt.scale || 1 };
+    fitGrid = { size: g.size || 48, offsetX: g.offsetX || 0, offsetY: g.offsetY || 0 };
+    // блок подгонки карты+сетки показываем только при редактировании существующей сцены
+    const fitBlock = editing ? `
+      <label>Подгонка карты под сетку (только мастер)</label>
+      <div class="tok-controls"><button class="tok-cond-btn" id="sp-fit-toggle">Подогнать карту</button>
+        <span style="font-size:11px;color:var(--ink-dim)">тащите карту/углы на столе или меняйте числа</span></div>
+      <div class="row">
+        <div><label>Масштаб %</label><input type="number" id="sp-mt-scale" value="${Math.round((mt.scale || 1) * 100)}" min="5" max="2000"></div>
+        <div><label>Фон X</label><input type="number" id="sp-mt-x" value="${Math.round(mt.x || 0)}"></div>
+        <div><label>Фон Y</label><input type="number" id="sp-mt-y" value="${Math.round(mt.y || 0)}"></div>
+      </div>
+      <div class="row">
+        <div><label>Клетка px</label><input type="number" id="sp-grid" value="${g.size || 48}" min="8" max="256"></div>
+        <div><label>Сетка X</label><input type="number" id="sp-goffx" value="${g.offsetX || 0}"></div>
+        <div><label>Сетка Y</label><input type="number" id="sp-goffy" value="${g.offsetY || 0}"></div>
+      </div>`
+      : `<label>Размер клетки (px)</label><input type="number" id="sp-grid" value="${g.size || 48}" min="8" max="256">`;
     const body = document.getElementById('sceneParamsBody');
     body.innerHTML = `
       <label>Имя сцены</label><input id="sp-name" value="${esc(name)}" placeholder="Пещера гоблинов">
@@ -2650,7 +2779,7 @@
         <input type="file" id="sp-upload" accept="image/png,image/jpeg,image/webp" style="display:none">
         <span id="sp-upload-msg" style="font-size:11px;color:var(--ink-dim)"></span>
       </div>
-      <label>Размер клетки (px)</label><input type="number" id="sp-grid" value="${(s.grid && s.grid.size) || 48}" min="8" max="256">
+      ${fitBlock}
       <label style="display:flex;align-items:center;gap:8px;text-transform:none;margin-top:14px">
         <input type="checkbox" id="sp-fog" ${s.fogEnabled ? 'checked' : ''} style="width:auto"> Туман войны включён</label>
       <div class="hint" style="color:var(--ink-dim);font-style:italic;font-size:12px">Город — выключить, пещера/подземелье — включить.</div>
@@ -2662,14 +2791,24 @@
         <button class="tok-cond-btn" id="sp-save" style="color:var(--gold-bright);border-color:var(--gold)">Сохранить</button>
       </div>`;
     renderSceneGallery();
+    renderMapBg();                                   // живой предпросмотр редактируемой сцены
     document.getElementById('sp-upload-btn').onclick = () => document.getElementById('sp-upload').click();
     document.getElementById('sp-upload').onchange = (e) => uploadMapToLibrary(e.target.files[0]);
-    document.getElementById('sp-cancel').onclick = () => document.getElementById('sceneParamsWin').classList.remove('show');
+    if (editing) {
+      document.getElementById('sp-fit-toggle').onclick = () => setFitMode(!fitMode);
+      ['sp-mt-scale', 'sp-mt-x', 'sp-mt-y', 'sp-grid', 'sp-goffx', 'sp-goffy'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.oninput = () => fitFromFields();   // числа ↔ перетаскивание (двусторонне)
+      });
+    }
+    const closeParams = () => { setFitMode(false); document.getElementById('sceneParamsWin').classList.remove('show'); renderMapBg(); };
+    document.getElementById('sp-cancel').onclick = closeParams;
     document.getElementById('sp-save').onclick = () => {
       const payload = {
         name: document.getElementById('sp-name').value.trim() || 'Сцена',
         map: sceneParamMap || null,                // ССЫЛКА на ассет (url), не dataURL
-        grid: { size: parseInt(document.getElementById('sp-grid').value, 10) || 48 },
+        mapTransform: { x: Math.round(fitTransform.x), y: Math.round(fitTransform.y), scale: +(+fitTransform.scale).toFixed(4) },
+        grid: { size: fitGrid.size, offsetX: fitGrid.offsetX, offsetY: fitGrid.offsetY },
         fogEnabled: document.getElementById('sp-fog').checked,
         notes: document.getElementById('sp-notes').value,
         searchKey: document.getElementById('sp-key').value,
@@ -2677,6 +2816,7 @@
       };
       if (editing) net.send({ type: 'scene.config', sceneId, ...payload });
       else net.send({ type: 'scene.create', ...payload });
+      setFitMode(false);
       document.getElementById('sceneParamsWin').classList.remove('show');
       document.getElementById('sceneWin').classList.remove('show');
     };
@@ -2762,6 +2902,50 @@
       if (zlvl) zlvl.textContent = Math.round(view.zoom * 100) + '%';
     }
     applyMapView = apply;   // даём applyGrid (S5) перерисовывать вид при смене сетки
+    mapZoom = () => view.zoom;   // отдаём текущий зум коду подгонки (screen→world)
+
+    // --- режим «Подогнать карту»: drag фона = mapTransform.x/y, угол = scale ---
+    // Меняем ЛОКАЛЬНЫЙ черновик fitTransform (оптимистично), финал шлём на mouseup.
+    let fitDrag = null;
+    function fitWorld(clientX, clientY) {
+      const r = vp.getBoundingClientRect();
+      return [(clientX - r.left - view.x) / view.zoom, (clientY - r.top - view.y) / view.zoom];
+    }
+    function fitDown(e) {
+      const t = fitTransform, w = _mapNat.w * t.scale, h = _mapNat.h * t.scale;
+      const handle = e.target.closest ? e.target.closest('.map-fit-h') : null;
+      if (handle) {
+        const opp = { tl: 'br', tr: 'bl', bl: 'tr', br: 'tl' }[handle.dataset.corner];
+        const anchor = { tl: [t.x, t.y], tr: [t.x + w, t.y], bl: [t.x, t.y + h], br: [t.x + w, t.y + h] }[opp];
+        fitDrag = { mode: 'scale', opp, anchor };
+      } else {
+        fitDrag = { mode: 'move', sx: e.clientX, sy: e.clientY, ox: t.x, oy: t.y };
+      }
+      e.preventDefault();
+    }
+    window.addEventListener('mousemove', (e) => {
+      if (!fitDrag) return;
+      if (fitDrag.mode === 'move') {
+        fitTransform.x = fitDrag.ox + (e.clientX - fitDrag.sx) / view.zoom;
+        fitTransform.y = fitDrag.oy + (e.clientY - fitDrag.sy) / view.zoom;
+      } else {
+        const [wx, wy] = fitWorld(e.clientX, e.clientY);
+        const [ax, ay] = fitDrag.anchor;
+        const s = Math.max(0.05, Math.max(Math.abs(wx - ax) / _mapNat.w, Math.abs(wy - ay) / _mapNat.h));
+        const w = _mapNat.w * s, h = _mapNat.h * s, opp = fitDrag.opp;
+        fitTransform.scale = s;                  // пропорции сохраняем (один s на обе оси)
+        fitTransform.x = (opp === 'tr' || opp === 'br') ? ax - w : ax;   // противоположный угол на месте
+        fitTransform.y = (opp === 'bl' || opp === 'br') ? ay - h : ay;
+      }
+      renderMapBg(); syncFitFields();            // предпросмотр, store не трогаем
+    });
+    window.addEventListener('mouseup', () => {
+      if (!fitDrag) return;
+      fitDrag = null;
+      sendFitConfig();                            // финал — серверу (источник истины)
+    });
+    vp.addEventListener('mousedown', (e) => { if (fitMode) fitDown(e); }, true);  // capture: раньше пана/токенов
+
     // фокус локального вида на центре клетки (cx,cy) — НИЧЕГО не шлём на сервер
     focusCell = (cx, cy) => {
       const rect = vp.getBoundingClientRect();
@@ -2829,6 +3013,7 @@
     // пан — таскание по пустому месту (по токену не панить)
     let drag = null;
     vp.addEventListener('mousedown', (e) => {
+      if (fitMode) return;                       // в режиме подгонки карту не панорамируем
       if (e.target.closest('.token')) return;
       drag = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false };
       vp.classList.add('dragging');
@@ -2856,6 +3041,7 @@
     let tokDrag = null;
     const CLICK_EPS = 4;                    // порог: меньше сдвига — это клик, не drag
     vp.addEventListener('mousedown', (e) => {
+      if (fitMode) return;                   // в режиме подгонки токены не таскаем
       const tokEl = e.target.closest('.token');
       if (activeTool) {                      // в режиме инструмента токены не таскаем
         if (activeTool === 'delete' && tokEl) { e.stopPropagation(); net.send({ type: 'token.remove', tokenId: tokEl.dataset.id }); }

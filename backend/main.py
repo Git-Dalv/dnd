@@ -148,17 +148,22 @@ DEFAULT_TOKENS = [
 
 
 DEFAULT_GRID = {"size": 48, "offsetX": 0, "offsetY": 0}
+# Трансформация фона в координатах МИРА (позиция/масштаб карты) — состояние сцены,
+# одинаковое у всех (НЕ локальный пан/зум вида). Дефолт — без сдвига, масштаб 1.
+DEFAULT_MAP_TRANSFORM = {"x": 0, "y": 0, "scale": 1}
 
 
 def new_scene(sid: str, name: str, tokens: dict | None = None, **extra) -> dict:
     """Каноническая структура сцены. mapAssetId — id загруженной карты (клиент
     рисует её, если есть, иначе map-путь из библиотеки). fogEnabled ПО УМОЛЧАНИЮ
-    false (город — без тумана; пещеру включают вручную)."""
+    false (город — без тумана; пещеру включают вручную). mapTransform — подгонка
+    фона под сетку (позиция/масштаб в координатах мира)."""
     return {
         "id": sid, "name": name,
         "map": extra.get("map"),              # путь к предзагруженной карте (библиотека)
         "mapAssetId": extra.get("mapAssetId"),  # id загруженного PNG из таблицы assets
         "grid": dict(extra.get("grid") or DEFAULT_GRID),
+        "mapTransform": dict(extra.get("mapTransform") or DEFAULT_MAP_TRANSFORM),
         "fogEnabled": bool(extra.get("fogEnabled", False)),
         "notes": extra.get("notes", ""),
         "searchKey": extra.get("searchKey", ""),
@@ -263,6 +268,7 @@ class Room:
         """Полная сериализация сцены (для клиента и БД): fog set → list."""
         return {"id": s["id"], "name": s["name"], "map": s.get("map"),
                 "mapAssetId": s.get("mapAssetId"), "grid": s.get("grid", dict(DEFAULT_GRID)),
+                "mapTransform": s.get("mapTransform", dict(DEFAULT_MAP_TRANSFORM)),
                 "fogEnabled": bool(s.get("fogEnabled", False)),
                 "notes": s.get("notes", ""), "searchKey": s.get("searchKey", ""),
                 "description": s.get("description", ""),
@@ -394,7 +400,8 @@ def get_room(room_id: str) -> Room:
             sc = new_scene(sid, s.get("name", "Сцена"),
                            {t["id"]: dict(t) for t in (s.get("tokens") or []) if t.get("id")},
                            map=s.get("map"), mapAssetId=s.get("mapAssetId"),
-                           grid=s.get("grid"), fogEnabled=s.get("fogEnabled", False),
+                           grid=s.get("grid"), mapTransform=s.get("mapTransform"),
+                           fogEnabled=s.get("fogEnabled", False),
                            notes=s.get("notes", ""), searchKey=s.get("searchKey", ""),
                            description=s.get("description", ""))
             sc["fog"] = set((int(c[0]), int(c[1])) for c in (s.get("fog") or []) if len(c) == 2)
@@ -919,6 +926,18 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
                     except (TypeError, ValueError):
                         pass
             s["grid"] = g
+        # подгонка фона под сетку (позиция/масштаб в координатах мира) — как grid
+        if isinstance(msg.get("mapTransform"), dict):
+            mt = dict(s.get("mapTransform") or DEFAULT_MAP_TRANSFORM)
+            for k in ("x", "y", "scale"):
+                if msg["mapTransform"].get(k) is not None:
+                    try:
+                        mt[k] = float(msg["mapTransform"][k])
+                    except (TypeError, ValueError):
+                        pass
+            if mt["scale"] <= 0:               # масштаб строго положительный
+                mt["scale"] = 1
+            s["mapTransform"] = mt
         # broadcast ПОЛНОЕ состояние сцены (а не только map/grid)
         await room.broadcast({"type": "scene.updated", "sceneId": s["id"], "state": room.scene_state(s["id"])})
         room.persist_tokens()
