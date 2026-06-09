@@ -2872,6 +2872,7 @@
       fd.append('file', file);
       fd.append('name', file.name.replace(/\.[^.]+$/, ''));
       fd.append('kind', 'map');
+      fd.append('memberId', net.member);        // сервер сверит права gm (HTTP-мутация)
       const res = await fetch(`/api/games/${encodeURIComponent(net.room)}/assets`, { method: 'POST', body: fd });
       if (!res.ok) throw new Error('http ' + res.status);
       const a = await res.json();

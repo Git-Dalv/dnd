@@ -38,7 +38,8 @@ async def lifespan(app: FastAPI):
     db.init_db()
     # Песочница входит из лобби напрямую (минуя POST /api/games), поэтому
     # гарантируем её строку в games ВСЕГДА — иначе FK/ассеты падают. Идемпотентно.
-    db.ensure_game("room_sandbox", "Песочница", "gm")
+    # gm_id = 'dev' (член песочницы из lobby) → dev-владелец = gm песочницы (HTTP-права).
+    db.ensure_game("room_sandbox", "Песочница", "dev")
     content_catalog.load()
     yield
 
@@ -464,13 +465,25 @@ def get_room(room_id: str) -> Room:
 async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     await ws.accept()
     role = ws.query_params.get("role", "player")
-    name = ws.query_params.get("name", member_id)
     # Песочница самонастраивается при первом входе: строки в games может не быть
-    # (вход из лобби минует POST /api/games). ensure_game идемпотентна — для
-    # боевых игр это no-op. FK ассетов после этого удовлетворён.
+    # (вход из лобби минует POST /api/games). gm_id = member_id ('dev' из lobby) →
+    # dev-владелец становится gm песочницы (согласуется с правами на HTTP).
+    # ensure_game идемпотентна — для боевых игр и повторного входа это no-op.
     if room_id == "room_sandbox":
-        db.ensure_game(room_id, "Песочница", "gm")
+        db.ensure_game(room_id, "Песочница", member_id)
     room = get_room(room_id)
+    seats = db.list_seats(room_id)
+
+    # Имя участника для журнала (по убыванию приоритета): явное ?name= → имя из
+    # занятого места (display_name) → member_id. «Голый» вход без ?name= шлёт
+    # name=member_id (net-фолбэк в prototype.html), поэтому такое значение
+    # настоящим именем НЕ считаем и восстанавливаем имя из места.
+    qname = (ws.query_params.get("name") or "").strip()
+    name = qname if (qname and qname != member_id) else None
+    if not name:
+        name = next((s["displayName"] for s in seats
+                     if s.get("memberId") == member_id and s.get("displayName")), None)
+    name = name or member_id          # последний фолбэк — member_id (не 'guest')
     member = Member(member_id, name, role, ws)
     room.members[member_id] = member
 
@@ -479,7 +492,7 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     # каталогом, чтобы стол получил готовые rolls с modifier.
     char_id = ws.query_params.get("char")
     if not char_id:
-        for s in db.list_seats(room_id):
+        for s in seats:
             if s.get("memberId") == member_id:
                 char_id = s.get("charId")
                 break
@@ -618,7 +631,9 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
         if role != "gm" and not (1 <= seat_no <= db.MAX_PLAYER_SEATS):
             await room.send_to([member_id], {"type": "seat.denied", "reason": "bad_seat"})
             return
-        if db.take_seat(room.room_id, seat_no, member_id, char_id):
+        # имя игрока сохраняем в место — журнал подпишется им и при «голом» входе
+        seat_name = (msg.get("name") or "").strip() or None
+        if db.take_seat(room.room_id, seat_no, member_id, char_id, seat_name):
             await room.broadcast({"type": "seat.updated", "seats": db.list_seats(room.room_id)})
         else:
             await room.send_to([member_id], {"type": "seat.denied", "reason": "taken"})
@@ -1112,6 +1127,33 @@ def _game_exists(room_id: str) -> bool:
     return any(g["roomId"] == room_id for g in db.list_games())
 
 
+def is_gm_http(room_id: str, member_id: str | None) -> bool:
+    """Права GM для HTTP-мутаций (WS-сессию с ролью запрос не несёт — роль/член
+    передаётся явно и сверяется на сервере). Источник истины — games.gm_id.
+    Принимаем, если member_id: (1) == gm_id игры; (2) держит GM-место в seats
+    (реальный лобби-GM входит со случайным member_id); (3) dev-владелец песочницы
+    (временно, пока нет полноценной авторизации). Цель — отсечь посторонних,
+    знающих room_id, а не строгая криптоаутентификация."""
+    if not member_id:
+        return False
+    game = db.get_game(room_id)
+    if game is None:
+        return False
+    if member_id == game.get("gmId"):
+        return True
+    for s in db.list_seats(room_id):
+        if s.get("role") == "gm" and s.get("memberId") == member_id:
+            return True
+    if room_id == "room_sandbox" and member_id == "dev":   # песочница: её dev-владелец
+        return True
+    return False
+
+
+def require_gm_http(room_id: str, member_id: str | None):
+    if not is_gm_http(room_id, member_id):
+        raise HTTPException(status_code=403, detail="gm only")
+
+
 def _image_size(data: bytes):
     """Размеры картинки (w, h) из заголовков PNG/JPEG/WEBP без зависимостей.
     Не распознали — (None, None) (размеры не критичны, как и сказано в задаче)."""
@@ -1144,14 +1186,15 @@ def _image_size(data: bytes):
 
 @app.post("/api/games/{room_id}/assets")
 async def api_upload_asset(room_id: str, file: UploadFile = File(...),
-                           name: str = Form(""), kind: str = Form("map")):
+                           name: str = Form(""), kind: str = Form("map"),
+                           memberId: str = Form("")):
     # Загрузка картинки мира: файл на ДИСК (data/assets/{room}/{file}), в БД —
     # только метаданные+ссылка. Тяжёлый бинарь по HTTP (не через WS-снапшоты).
-    # TODO: проверка прав (gm) — пока открыто для «себя с друзьями».
     # Проверка наличия игры — ПРАВИЛЬНАЯ (FK): игра должна существовать. Песочница
     # самонастраивается на старте/входе (lifespan + ws_endpoint), поэтому проходит.
     if not _game_exists(room_id):
         raise HTTPException(status_code=404, detail="game not found")
+    require_gm_http(room_id, memberId)        # gm-only: симметрично WS require_gm
     mime = (file.content_type or "").split(";")[0].strip()
     ext = EXT_BY_MIME.get(mime)
     if not ext:
@@ -1178,11 +1221,12 @@ async def api_upload_asset(room_id: str, file: UploadFile = File(...),
 
 
 @app.delete("/api/games/{room_id}/assets/{asset_id}")
-async def api_delete_asset(room_id: str, asset_id: str):
-    # Удаляем запись и файл с диска. TODO: проверка прав (gm).
+async def api_delete_asset(room_id: str, asset_id: str, memberId: str = ""):
+    # Удаляем запись и файл с диска. gm-only (memberId из ?memberId=).
     meta = db.get_asset(asset_id)
     if not meta or meta["roomId"] != room_id:
         raise HTTPException(status_code=404, detail="asset not found")
+    require_gm_http(room_id, memberId)
     path = db.delete_asset(asset_id)
     if path:
         try:

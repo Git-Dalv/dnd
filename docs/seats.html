@@ -470,7 +470,8 @@
     try { await openWs(role); }
     catch (e) { showBanner(DENY_REASON.connection); return; }
     pendingTake = { seatNo, role, charId: charId || null, name: nameInput.value.trim() || 'Гость' };
-    ws.send(JSON.stringify({ type: 'seat.take', seatNo, charId: charId || null }));
+    // имя кладём в место (БД) — журнал подпишется им и при «голом» входе без ?name=
+    ws.send(JSON.stringify({ type: 'seat.take', seatNo, charId: charId || null, name: pendingTake.name }));
   }
 
   function goToTable(t) {

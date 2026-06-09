@@ -52,11 +52,12 @@ CREATE TABLE IF NOT EXISTS characters (
 -- занять место (источник истины), не клиент. Строка = одно место.
 -- role: 'gm' | 'player'. seat_no: 0 для gm, 1..4 для игроков.
 CREATE TABLE IF NOT EXISTS seats (
-    room_id     TEXT NOT NULL REFERENCES games(room_id) ON DELETE CASCADE,
-    seat_no     INTEGER NOT NULL,         -- 0=DM, 1..4=игроки
-    role        TEXT NOT NULL,            -- 'gm' | 'player'
-    member_id   TEXT,                     -- кто занял (null = свободно)
-    char_id     TEXT REFERENCES characters(char_id) ON DELETE SET NULL,
+    room_id      TEXT NOT NULL REFERENCES games(room_id) ON DELETE CASCADE,
+    seat_no      INTEGER NOT NULL,        -- 0=DM, 1..4=игроки
+    role         TEXT NOT NULL,           -- 'gm' | 'player'
+    member_id    TEXT,                    -- кто занял (null = свободно)
+    char_id      TEXT REFERENCES characters(char_id) ON DELETE SET NULL,
+    display_name TEXT,                    -- имя игрока (для журнала при «голом» входе без ?name=)
     PRIMARY KEY (room_id, seat_no)
 );
 
@@ -133,6 +134,11 @@ def connect() -> sqlite3.Connection:
 def init_db():
     with connect() as conn:
         conn.executescript(SCHEMA)
+        # миграция для БД, созданных до колонки seats.display_name (идемпотентно)
+        try:
+            conn.execute("ALTER TABLE seats ADD COLUMN display_name TEXT")
+        except sqlite3.OperationalError:
+            pass                          # колонка уже есть — ок
 
 
 # ---- игры -----------------------------------------------------------------
@@ -174,6 +180,17 @@ def ensure_game(room_id: str, name: str | None = None, gm_id: str | None = None)
         return True
     except sqlite3.IntegrityError:
         return False                 # гонка: кто-то создал параллельно — это ок
+
+
+def get_game(room_id: str) -> dict | None:
+    """Точечная карточка игры (метаданные без state). Источник истины о GM —
+    games.gm_id (для проверки прав на HTTP)."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT room_id, name, gm_id, created_at FROM games WHERE room_id=?", (room_id,)
+        ).fetchone()
+    return {"roomId": row["room_id"], "name": row["name"],
+            "gmId": row["gm_id"], "createdAt": row["created_at"]} if row else None
 
 
 def get_game_state(room_id: str) -> dict:
@@ -397,31 +414,33 @@ def list_dossiers(room_id: str) -> list[dict]:
 def list_seats(room_id: str) -> list[dict]:
     with connect() as conn:
         rows = conn.execute(
-            "SELECT seat_no, role, member_id, char_id FROM seats WHERE room_id=? ORDER BY seat_no",
+            "SELECT seat_no, role, member_id, char_id, display_name FROM seats WHERE room_id=? ORDER BY seat_no",
             (room_id,),
         ).fetchall()
-    return [{"seatNo": r["seat_no"], "role": r["role"],
-             "memberId": r["member_id"], "charId": r["char_id"]} for r in rows]
+    return [{"seatNo": r["seat_no"], "role": r["role"], "memberId": r["member_id"],
+             "charId": r["char_id"], "displayName": r["display_name"]} for r in rows]
 
 
-def take_seat(room_id: str, seat_no: int, member_id: str, char_id: str | None) -> bool:
+def take_seat(room_id: str, seat_no: int, member_id: str, char_id: str | None,
+              display_name: str | None = None) -> bool:
     """
     Занять место. Возвращает True при успехе. Сервер вызывает это как источник
     истины — гонку двух игроков за одно место решает атомарный UPDATE с условием
     member_id IS NULL (или это тот же member). Лимит мест уже зашит числом строк.
+    display_name — имя игрока, чтобы журнал подписывался им при «голом» входе.
     """
     with connect() as conn:
         cur = conn.execute(
-            "UPDATE seats SET member_id=?, char_id=? "
+            "UPDATE seats SET member_id=?, char_id=?, display_name=? "
             "WHERE room_id=? AND seat_no=? AND (member_id IS NULL OR member_id=?)",
-            (member_id, char_id, room_id, seat_no, member_id),
+            (member_id, char_id, display_name, room_id, seat_no, member_id),
         )
         return cur.rowcount > 0
 
 
 def free_seat(room_id: str, member_id: str):
     with connect() as conn:
-        conn.execute("UPDATE seats SET member_id=NULL, char_id=NULL "
+        conn.execute("UPDATE seats SET member_id=NULL, char_id=NULL, display_name=NULL "
                      "WHERE room_id=? AND member_id=?", (room_id, member_id))
 
 
