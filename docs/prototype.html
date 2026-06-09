@@ -125,6 +125,33 @@
   .scn-act:hover { opacity: 1; color: var(--gold-bright); }
   .scn-new { padding: 8px 10px; cursor: pointer; color: var(--gold-bright); font-size: 12px; }
   .scn-new:hover { background: #241c14; }
+
+  /* бар сцен — крупные карточки-превью активного сценария (паттерн hotbar, но больше) */
+  .scene-bar { position: fixed; left: 50%; bottom: 92px; transform: translateX(-50%); z-index: 90;
+    display: none; flex-direction: column; gap: 8px; max-width: min(94vw, 1100px);
+    background: linear-gradient(180deg, rgba(31,26,19,.98), rgba(20,16,11,.99)); border: 1px solid var(--gold);
+    border-radius: 10px; padding: 12px 14px; box-shadow: 0 16px 48px rgba(0,0,0,.75); }
+  .scene-bar.show { display: flex; }
+  .scene-bar-head { display: flex; align-items: center; }
+  .scene-bar-title { font-family: 'Cinzel'; color: var(--gold-bright); font-size: 14px; flex: 1; }
+  .scene-bar-strip { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 8px; }
+  .scene-card { flex: 0 0 auto; width: 140px; background: linear-gradient(160deg, var(--panel-2), #181309);
+    border: 1px solid var(--edge-bright); border-radius: 8px; overflow: hidden; cursor: pointer; transition: all .15s; }
+  .scene-card:hover { border-color: var(--gold); box-shadow: 0 0 12px rgba(201,162,83,.25); transform: translateY(-2px); }
+  .scene-card.active { border-color: var(--gold-bright); box-shadow: 0 0 12px rgba(232,200,120,.45); }
+  .scene-card.dragover { border-color: var(--gold-bright); border-style: dashed; }
+  .scene-card-thumb { height: 84px; background: #241c14 center/cover no-repeat; display: flex;
+    align-items: center; justify-content: center; font-size: 30px; color: var(--ink-dim); }
+  .scene-card-thumb.noimg { background:
+      repeating-linear-gradient(0deg, #221a10, #221a10 11px, #2c2418 11px, #2c2418 12px),
+      repeating-linear-gradient(90deg, #221a10, #221a10 11px, #2c2418 11px, #2c2418 12px); }
+  .scene-card-name { font-family: 'Cinzel'; font-size: 12px; color: var(--ink); padding: 7px 8px 4px;
+    text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .scene-card.active .scene-card-name { color: var(--gold-bright); }
+  .scene-card-acts { display: flex; justify-content: center; gap: 8px; padding: 0 0 8px; }
+  .scene-act { cursor: pointer; opacity: .55; font-size: 13px; }
+  .scene-act:hover { opacity: 1; color: var(--gold-bright); }
+  .scene-card-new .scene-card-thumb { font-size: 34px; color: var(--gold-bright); }
   /* zoom controls — поверх мира, в углу сцены */
   .zoom-ctl { position: absolute; bottom: 14px; left: 16px; z-index: 6; display: flex; flex-direction: column; gap: 4px; }
   .zoom-ctl button { width: 30px; height: 30px; background: linear-gradient(180deg, var(--panel-2), var(--panel));
@@ -753,6 +780,15 @@
     <div class="win-body" id="sceneBody"></div>
   </div>
 </div>
+<!-- бар сцен активного сценария: крупные карточки-превью (как hotbar, но больше),
+     drag-перестановка, создать/переключить/настроить. Только GM. -->
+<div class="scene-bar" id="sceneBar">
+  <div class="scene-bar-head">
+    <span class="scene-bar-title">🗺 Сцены сценария</span>
+    <button class="win-x" id="sceneBarX">✕</button>
+  </div>
+  <div class="scene-bar-strip" id="sceneBarStrip"></div>
+</div>
 <!-- параметры сцены: имя, карта (PNG), сетка, туман, мета -->
 <div class="win-back" id="sceneParamsWin">
   <div class="win">
@@ -950,11 +986,11 @@
       store.fog = msg.revealed || [];
       renderFog();
     },
-    // список сцен (+ активная) — для инструмента «Сцены»
+    // список сцен (+ активная) активного сценария — для бара сцен
     'scene.list': (msg) => {
       store.scenes = msg.scenes || [];
       store.activeSceneId = msg.activeSceneId || store.activeSceneId;
-      renderScenesTool();
+      renderSceneBar();
     },
     // список сценариев (наборов сцен) и активный
     'scenario.list': (msg) => {
@@ -976,6 +1012,7 @@
     'scene.switched': (msg) => {
       store.activeSceneId = msg.sceneId;
       applyScene(msg.state || {});
+      renderSceneBar();            // подсветка активной карточки
     },
     // изменены параметры активной сцены (фон/сетка/туман/мета) — применяем целиком
     'scene.updated': (msg) => {
@@ -985,6 +1022,7 @@
       applyGrid(store.scene.grid);
       renderFog();                 // fogEnabled мог измениться
       renderDevTools();            // показать/скрыть кисти тумана
+      renderSceneBar();            // имя/фон сцены могли измениться
     },
     // приватные заметки мастера (только gm их получает)
     'notes.snapshot': (msg) => {
@@ -1806,7 +1844,7 @@
         document.querySelectorAll('.dev-tool').forEach(b => b.classList.toggle('active', b.dataset.tool === activeTool));
         document.getElementById('npcTemplates').classList.toggle('show', activeTool === 'npc');
         if (activeTool === 'grid') openGridTool();
-        if (activeTool === 'scenes') openScenesTool();
+        if (activeTool === 'scenes') openSceneBar();   // новый бар сцен (заменил окно-список)
         if (activeTool === 'notes') openNotesTool();
       };
     });
@@ -1832,10 +1870,12 @@
   document.querySelectorAll('.dm-btn').forEach(b => {
     b.onclick = () => dmAction(b.dataset.dm);
   });
+  { const x = document.getElementById('sceneBarX'); if (x) x.onclick = () => closeSceneBar(); }
   function dmAction(kind) {
     if (kind === 'npc') return openBestiary();
     if (kind === 'combat') return dmToggleCombat();
-    console.log('[dm-console] TODO:', kind);   // check / scene — следующие этапы
+    if (kind === 'scene') return openSceneBar();
+    console.log('[dm-console] TODO:', kind);   // check — следующий этап
   }
   // «Режим боя»: idle -> старт боя со ВСЕМИ токенами на карте; во время боя
   // управление (след. ход / закончить) — в самом трекере инициативы.
@@ -2300,7 +2340,80 @@
       scenarioMenuOpen = false; host.classList.remove('open');
     }
   });
-  function renderSceneBar() {}
+  // Бар сцен активного сценария — крупные карточки-превью (как hotbar, но больше).
+  // Только GM. Порядок/состав приходят из store.scenes; на сцену кладёт сервер,
+  // порядок при drag НЕ меняем локально — ждём scene.list в ответ на scene.reorder.
+  function sceneThumbUrl(s) {
+    if (s.mapAssetId) return `/api/games/${encodeURIComponent(net.room)}/assets/${s.mapAssetId}`;
+    return s.map || null;
+  }
+  let sceneDragSid = null;
+  function openSceneBar() { renderSceneBar(); document.getElementById('sceneBar').classList.add('show'); }
+  function closeSceneBar() { document.getElementById('sceneBar').classList.remove('show'); }
+  function renderSceneBar() {
+    const strip = document.getElementById('sceneBarStrip');
+    if (!strip) return;
+    const isGm = store.me && store.me.role === 'gm';
+    const scenes = store.scenes || [];
+    const cards = scenes.map(s => {
+      const active = s.id === store.activeSceneId;
+      const url = sceneThumbUrl(s);
+      const thumb = url
+        ? `<div class="scene-card-thumb" style="background-image:url('${url}')"></div>`
+        : `<div class="scene-card-thumb noimg"></div>`;
+      const acts = isGm ? `<div class="scene-card-acts">`
+        + `<span class="scene-act" data-edit="${s.id}" title="Фон/сетка">⚙</span>`
+        + `<span class="scene-act" data-rename="${s.id}" title="Переименовать">✎</span>`
+        + `<span class="scene-act" data-del="${s.id}" title="Удалить">🗑</span></div>` : '';
+      return `<div class="scene-card${active ? ' active' : ''}" data-sid="${s.id}"${isGm ? ' draggable="true"' : ''}>`
+        + thumb + `<div class="scene-card-name">${active ? '✦ ' : ''}${esc(s.name)}</div>` + acts + `</div>`;
+    }).join('');
+    const addCard = isGm
+      ? `<div class="scene-card scene-card-new" id="sceneAddCard"><div class="scene-card-thumb noimg">＋</div><div class="scene-card-name">Новая сцена</div></div>`
+      : '';
+    strip.innerHTML = cards + addCard;
+
+    // переключение по клику (кроме клика по иконкам действий)
+    strip.querySelectorAll('.scene-card[data-sid]').forEach(card => {
+      card.onclick = (e) => {
+        if (e.target.closest('.scene-act')) return;
+        const sid = card.dataset.sid;
+        if (sid !== store.activeSceneId) net.send({ type: 'scene.switch', sceneId: sid });
+      };
+      if (!isGm) return;
+      // drag-перестановка (HTML5): по drop собираем новый порядок и шлём reorder
+      card.ondragstart = (e) => { sceneDragSid = card.dataset.sid; if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'; };
+      card.ondragover = (e) => { e.preventDefault(); card.classList.add('dragover'); };
+      card.ondragleave = () => card.classList.remove('dragover');
+      card.ondrop = (e) => {
+        e.preventDefault(); card.classList.remove('dragover');
+        const target = card.dataset.sid;
+        if (!sceneDragSid || sceneDragSid === target) { sceneDragSid = null; return; }
+        const ids = scenes.map(s => s.id);
+        const from = ids.indexOf(sceneDragSid), to = ids.indexOf(target);
+        if (from < 0 || to < 0) { sceneDragSid = null; return; }
+        ids.splice(to, 0, ids.splice(from, 1)[0]);
+        net.send({ type: 'scene.reorder', scenarioId: store.activeScenarioId, sceneIds: ids });
+        sceneDragSid = null;                 // порядок применит handler scene.list
+      };
+    });
+    if (!isGm) return;
+    strip.querySelectorAll('[data-edit]').forEach(el => el.onclick = (e) => { e.stopPropagation(); openSceneParams(el.dataset.edit); });
+    strip.querySelectorAll('[data-rename]').forEach(el => el.onclick = (e) => {
+      e.stopPropagation();
+      const s = scenes.find(x => x.id === el.dataset.rename);
+      const n = prompt('Новое имя сцены', s ? s.name : '');
+      if (n && n.trim()) net.send({ type: 'scene.rename', sceneId: el.dataset.rename, name: n.trim() });
+    });
+    strip.querySelectorAll('[data-del]').forEach(el => el.onclick = (e) => {
+      e.stopPropagation();
+      const s = scenes.find(x => x.id === el.dataset.del);
+      if (confirm(`Удалить сцену «${s ? s.name : ''}»?`))
+        net.send({ type: 'scenario.removeScene', scenarioId: store.activeScenarioId, sceneId: el.dataset.del });
+    });
+    const add = document.getElementById('sceneAddCard');
+    if (add) add.onclick = () => net.send({ type: 'scene.create' });
+  }
   function renderScenesTool() {
     const body = document.getElementById('sceneBody');
     if (!body) return;

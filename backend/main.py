@@ -268,9 +268,12 @@ class Room:
         return self._scene_serialize(self.active_scenes()[sid])
 
     def scene_list(self) -> dict:
-        """Сцены АКТИВНОГО сценария + его активная сцена."""
+        """Сцены АКТИВНОГО сценария + его активная сцена. map/mapAssetId — чтобы
+        бар сцен рисовал превью фона без полного scene_state каждой сцены."""
         scenes = self.active_scenes()
-        return {"scenes": [{"id": s["id"], "name": s["name"]} for s in scenes.values()],
+        return {"scenes": [{"id": s["id"], "name": s["name"],
+                            "map": s.get("map"), "mapAssetId": s.get("mapAssetId")}
+                           for s in scenes.values()],
                 "activeSceneId": self.active_scene_id}
 
     def scenarios_state(self) -> list:
@@ -823,6 +826,39 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
         room.active_scenario()["activeSceneId"] = sid   # сценарий помнит свою сцену
         await room.broadcast({"type": "scene.switched", "sceneId": sid, "state": room.scene_state(sid)})
         await room.broadcast({"type": "scene.list", **room.scene_list()})
+        room.persist_tokens()
+        return
+
+    # --- перестановка порядка сцен в сценарии (gm-only, drag в баре сцен) ---
+    if mtype == "scene.reorder":
+        if not require_gm(room.members.get(member_id)):
+            return
+        sc = room.scenarios.get(msg.get("scenarioId"))
+        if not sc:
+            return
+        scenes = sc["scenes"]
+        # пересобрать dict в присланном порядке; чужие id игнор, неупомянутые — в конец
+        reordered = {sid: scenes[sid] for sid in (msg.get("sceneIds") or []) if sid in scenes}
+        for sid, s in scenes.items():
+            reordered.setdefault(sid, s)
+        sc["scenes"] = reordered
+        await room.broadcast({"type": "scenario.list", **room.scenario_list()})
+        if room.active_scenario_id == sc["id"]:
+            await room.broadcast({"type": "scene.list", **room.scene_list()})
+        room.persist_tokens()
+        return
+
+    # --- переименование сцены (gm-only) ---
+    if mtype == "scene.rename":
+        if not require_gm(room.members.get(member_id)):
+            return
+        s = room.active_scenes().get(msg.get("sceneId"))
+        name = msg.get("name")
+        if not s or not name:
+            return
+        s["name"] = str(name)
+        await room.broadcast({"type": "scene.list", **room.scene_list()})
+        await room.broadcast({"type": "scene.updated", "sceneId": s["id"], "state": room.scene_state(s["id"])})
         room.persist_tokens()
         return
 
