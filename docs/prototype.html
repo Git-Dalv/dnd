@@ -103,6 +103,28 @@
     font-family: 'Cinzel'; font-size: 12px; letter-spacing: .15em; color: var(--ink-dim); text-transform: uppercase; }
   .grid-hint { position: absolute; bottom: 14px; right: 16px; z-index: 5; font-size: 11px; color: var(--ink-dim);
     font-style: italic; background: rgba(20,17,13,.7); padding: 3px 8px; border-radius: 3px; }
+  /* выбор сценария — слева вверху над картой (dark fantasy, Cinzel/gold) */
+  .scenario-picker { position: absolute; top: 12px; left: 16px; z-index: 8; font-family: 'Cinzel'; }
+  .scn-btn { display: flex; align-items: center; gap: 8px; max-width: 260px; padding: 7px 12px; cursor: pointer;
+    background: linear-gradient(180deg, rgba(42,35,25,.96), rgba(20,16,11,.96)); border: 1px solid var(--gold);
+    border-radius: 6px; color: var(--gold-bright); font-size: 12px; letter-spacing: .06em; box-shadow: 0 4px 14px rgba(0,0,0,.55); }
+  .scn-btn:hover { border-color: var(--gold-bright); }
+  .scn-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scn-chev { margin-left: auto; font-size: 9px; color: var(--ink-dim); transition: transform .15s; }
+  .scenario-picker.open .scn-chev { transform: rotate(180deg); }
+  .scn-menu { display: none; margin-top: 4px; min-width: 220px; max-width: 300px; overflow: hidden;
+    background: linear-gradient(180deg, rgba(31,26,19,.98), rgba(20,16,11,.99)); border: 1px solid var(--edge-bright);
+    border-radius: 6px; box-shadow: 0 10px 30px rgba(0,0,0,.7); }
+  .scenario-picker.open .scn-menu { display: block; }
+  .scn-item { display: flex; align-items: center; gap: 6px; padding: 8px 10px; cursor: pointer;
+    border-bottom: 1px solid var(--edge); color: var(--ink); font-size: 12px; }
+  .scn-item:hover { background: #241c14; }
+  .scn-item.active { color: var(--gold-bright); }
+  .scn-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scn-act { opacity: .5; padding: 0 3px; }
+  .scn-act:hover { opacity: 1; color: var(--gold-bright); }
+  .scn-new { padding: 8px 10px; cursor: pointer; color: var(--gold-bright); font-size: 12px; }
+  .scn-new:hover { background: #241c14; }
   /* zoom controls — поверх мира, в углу сцены */
   .zoom-ctl { position: absolute; bottom: 14px; left: 16px; z-index: 6; display: flex; flex-direction: column; gap: 4px; }
   .zoom-ctl button { width: 30px; height: 30px; background: linear-gradient(180deg, var(--panel-2), var(--panel));
@@ -516,6 +538,8 @@
   <div class="stage">
     <!-- map view -->
     <div id="view-map">
+      <!-- выбор сценария (слева): кнопка с активным + дропдаун; управляет только GM -->
+      <div class="scenario-picker" id="scenarioPicker"></div>
       <div class="map-label">Двор Зевающего Портала</div>
       <div class="grid-hint">Сетка · 5 фт / клетка</div>
       <!-- viewport обрезает, world таскается/масштабируется внутри -->
@@ -2043,6 +2067,8 @@
   renderParty();
   renderCombat();
   renderMode();
+  let scenarioMenuOpen = false;   // объявлено ДО первого renderScenarioBar() (TDZ)
+  renderScenarioBar();   // пустой пикер до прихода scenario.list
   // renderFog() — после объявления GRID, в секции карты (см. ниже)
 
   // ростер персонажей (имена для подписей партии) — read-only из лобби-API
@@ -2208,9 +2234,72 @@
     applyGrid(store.scene.grid);        // пересобирает токены/фог под новую сетку
     renderDevTools();                   // кисти тумана зависят от fogEnabled
   }
-  // Заглушки панелей сценариев/сцен — наполняются в промптах 3-4. Объявлены, чтобы
-  // handlers scenario.list/scenario.switched могли их звать уже сейчас.
-  function renderScenarioBar() {}
+  // Дропдаун выбора сценария (слева вверху карты). Только GM управляет; игрок
+  // видит имя активного без раскрытия. НИЧЕГО не пишем в store — только net.send,
+  // перерисует handler scenario.list/scenario.switched.
+  // (scenarioMenuOpen объявлена выше, до первого вызова renderScenarioBar.)
+  function renderScenarioBar() {
+    const host = document.getElementById('scenarioPicker');
+    if (!host) return;
+    const isGm = store.me && store.me.role === 'gm';
+    const list = store.scenarios || [];
+    const active = list.find(s => s.id === store.activeScenarioId) || list[0] || null;
+    const name = active ? active.name : '—';
+
+    // не-GM: read-only, только имя активного сценария (без раскрытия/кнопок)
+    if (!isGm) {
+      scenarioMenuOpen = false; host.classList.remove('open');
+      host.innerHTML = `<div class="scn-btn" style="cursor:default"><span class="scn-name">${esc(name)}</span></div>`;
+      return;
+    }
+
+    host.classList.toggle('open', scenarioMenuOpen);
+    const items = list.map(s => {
+      const a = s.id === store.activeScenarioId;
+      return `<div class="scn-item${a ? ' active' : ''}" data-switch="${s.id}">`
+        + `<span class="scn-item-name">${a ? '✦ ' : ''}${esc(s.name)}</span>`
+        + `<span class="scn-act" data-rename="${s.id}" title="Переименовать">✎</span>`
+        + `<span class="scn-act" data-delete="${s.id}" title="Удалить">🗑</span></div>`;
+    }).join('');
+    host.innerHTML =
+      `<div class="scn-btn" id="scnToggle"><span class="scn-name">${esc(name)}</span><span class="scn-chev">▼</span></div>`
+      + `<div class="scn-menu">${items}<div class="scn-new" id="scnAdd">＋ Новый сценарий</div></div>`;
+
+    document.getElementById('scnToggle').onclick = (e) => {
+      e.stopPropagation();
+      scenarioMenuOpen = !scenarioMenuOpen;
+      host.classList.toggle('open', scenarioMenuOpen);   // только класс, без ре-рендера (target не отвалится)
+    };
+    host.querySelectorAll('[data-switch]').forEach(el => el.onclick = () => {
+      const id = el.dataset.switch;
+      if (id !== store.activeScenarioId) net.send({ type: 'scenario.switch', scenarioId: id });
+      scenarioMenuOpen = false; host.classList.remove('open');
+    });
+    host.querySelectorAll('[data-rename]').forEach(el => el.onclick = (e) => {
+      e.stopPropagation();
+      const s = list.find(x => x.id === el.dataset.rename);
+      const n = prompt('Новое имя сценария', s ? s.name : '');
+      if (n && n.trim()) net.send({ type: 'scenario.rename', scenarioId: el.dataset.rename, name: n.trim() });
+    });
+    host.querySelectorAll('[data-delete]').forEach(el => el.onclick = (e) => {
+      e.stopPropagation();
+      if (list.length <= 1) { alert('Нельзя удалить последний сценарий'); return; }
+      const s = list.find(x => x.id === el.dataset.delete);
+      if (confirm(`Удалить сценарий «${s ? s.name : ''}»?`)) net.send({ type: 'scenario.delete', scenarioId: el.dataset.delete });
+    });
+    document.getElementById('scnAdd').onclick = () => {
+      const n = prompt('Имя нового сценария', 'Новый сценарий');
+      if (n && n.trim()) net.send({ type: 'scenario.create', name: n.trim() });
+      scenarioMenuOpen = false; host.classList.remove('open');
+    };
+  }
+  // клик вне дропдауна закрывает его (вешаем ОДИН раз)
+  document.addEventListener('click', (e) => {
+    const host = document.getElementById('scenarioPicker');
+    if (scenarioMenuOpen && host && !e.target.closest('#scenarioPicker')) {
+      scenarioMenuOpen = false; host.classList.remove('open');
+    }
+  });
   function renderSceneBar() {}
   function renderScenesTool() {
     const body = document.getElementById('sceneBody');
