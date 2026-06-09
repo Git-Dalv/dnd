@@ -216,16 +216,21 @@
   /* скрытый токен (виден только мастеру/в dev) — полупрозрачный с пометкой */
   .token.hidden-tok { opacity: .45; }
   .token.hidden-tok::after { content: '🚫'; position: absolute; top: -6px; left: -6px; font-size: 11px; }
-  /* палитра песочницы — оверлей слева на сцене, виден только в dev */
-  .dev-palette { position: absolute; top: 48px; left: 16px; z-index: 8; display: none; flex-direction: column; gap: 5px; }
-  .stage.dev .dev-palette { display: flex; }
-  .dev-tool { width: 34px; height: 34px; border-radius: 6px; cursor: pointer; font-size: 16px;
-    display: flex; align-items: center; justify-content: center;
+  /* палитра песочницы — теперь ЖИВЁТ в правой панели (#toolsPanel), только в dev */
+  .tools-panel { display: none; flex: 1; flex-direction: column; gap: 8px; overflow-y: auto; padding: 8px 2px 0; min-height: 0; }
+  .party.dev .tools-panel { display: flex; }        /* в песочнице — инструменты вместо камер */
+  .party.dev .cams { display: none; }               /* камеры скрыты в dev */
+  .party.dev #selfMic, .party.dev #selfCam, .party.dev #selfSpk { display: none; }  /* медиа-тумблеры скрыты, «Выйти» остаётся */
+  .party.dev .collapse-btn { display: none; }       /* сворачивание не нужно в режиме инструментов */
+  .dev-palette { display: flex; flex-direction: column; gap: 6px; }
+  /* кнопки-инструменты — текстовые подписи во всю ширину панели (как пульт) */
+  .dev-tool { display: flex; align-items: center; justify-content: center; padding: 9px 10px; border-radius: 6px;
+    cursor: pointer; font-family: 'Cinzel'; font-size: 13px; letter-spacing: .03em; color: var(--gold-bright);
     background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--edge-bright); }
   .dev-tool:hover { border-color: var(--gold); }
   .dev-tool.active { border-color: var(--gold-bright); background: rgba(201,162,83,.2); box-shadow: 0 0 8px rgba(201,162,83,.4); }
-  /* выбор шаблона NPC рядом с палитрой */
-  .npc-templates { position: absolute; top: 48px; left: 58px; z-index: 8; display: none; flex-direction: column; gap: 4px;
+  /* выбор шаблона NPC под палитрой (виден при активном инструменте NPC) */
+  .npc-templates { display: none; flex-direction: column; gap: 4px;
     background: linear-gradient(180deg, rgba(31,26,19,.97), rgba(20,16,11,.98)); border: 1px solid var(--edge-bright);
     border-radius: 6px; padding: 6px; }
   .npc-templates.show { display: flex; }
@@ -621,20 +626,6 @@
       </div>
       <!-- трекер инициативы (виден в бою; renderCombat из store.combat) -->
       <div class="initiative" id="initiativeTracker"></div>
-      <!-- палитра песочницы (только dev-режим; взаимоисключающие инструменты) -->
-      <div class="dev-palette" id="devPalette">
-        <div class="dev-tool" data-tool="token" title="Поставить токен">🔵</div>
-        <div class="dev-tool" data-tool="npc" title="Поставить NPC">👹</div>
-        <div class="dev-tool" data-tool="fog-reveal" title="Туман: открыть">🌥</div>
-        <div class="dev-tool" data-tool="fog-hide" title="Туман: скрыть">🌫</div>
-        <div class="dev-tool" data-tool="grid" title="Сетка">▦</div>
-        <div class="dev-tool" data-tool="scenes" title="Сцены">🗺</div>
-        <div class="dev-tool" data-tool="notes" title="Заметки мастера">📝</div>
-        <div class="dev-tool" data-tool="export" title="Экспорт сцены в PNG">📤</div>
-        <div class="dev-tool" data-tool="delete" title="Удалить">🗑</div>
-      </div>
-      <!-- выбор шаблона NPC (виден, когда активен инструмент NPC) -->
-      <div class="npc-templates" id="npcTemplates"></div>
     </div>
     <!-- sheet view -->
     <!-- карточка персонажа — наполняется renderSheet() из store.character -->
@@ -697,8 +688,26 @@
   <!-- RIGHT PARTY (бар камер) -->
   <div class="party" id="party">
     <div class="party-head">
-      <span class="party-title">Отряд</span>
+      <span class="party-title" id="partyTitle">Отряд</span>
       <button class="collapse-btn" id="partyCollapse" title="Свернуть">⮞</button>
+    </div>
+    <!-- инструменты песочницы (только dev): палитра + шаблоны NPC. В обычной игре
+         скрыто, вместо них — видеокарточки. Те же .dev-tool/data-tool/#npcTemplates,
+         просто другое место в DOM (обработчики по селекторам не ломаются). -->
+    <div class="tools-panel" id="toolsPanel">
+      <div class="dev-palette" id="devPalette">
+        <div class="dev-tool" data-tool="token" title="Поставить токен"><span class="lbl">Токен</span></div>
+        <div class="dev-tool" data-tool="npc" title="Поставить NPC"><span class="lbl">NPC</span></div>
+        <div class="dev-tool" data-tool="fog-reveal" title="Туман: открыть"><span class="lbl">Туман: открыть</span></div>
+        <div class="dev-tool" data-tool="fog-hide" title="Туман: скрыть"><span class="lbl">Туман: скрыть</span></div>
+        <div class="dev-tool" data-tool="grid" title="Сетка"><span class="lbl">Сетка</span></div>
+        <div class="dev-tool" data-tool="scenes" title="Сцены"><span class="lbl">Сцены</span></div>
+        <div class="dev-tool" data-tool="notes" title="Заметки мастера"><span class="lbl">Заметки</span></div>
+        <div class="dev-tool" data-tool="export" title="Экспорт сцены в PNG"><span class="lbl">Экспорт PNG</span></div>
+        <div class="dev-tool" data-tool="delete" title="Удалить"><span class="lbl">Удалить</span></div>
+      </div>
+      <!-- выбор шаблона NPC (виден, когда активен инструмент NPC) -->
+      <div class="npc-templates" id="npcTemplates"></div>
     </div>
     <!-- квадратные карточки — renderParty() из store.seats (занятые места) -->
     <div class="cams" id="cams"></div>
@@ -1896,8 +1905,10 @@
     }
   }
   if (store.me.dev) {
-    const stageEl = document.querySelector('.stage');
-    if (stageEl) stageEl.classList.add('dev');     // показывает .dev-palette
+    const partyEl2 = document.getElementById('party');
+    if (partyEl2) partyEl2.classList.add('dev');   // правая панель = инструменты вместо камер
+    const pt = document.getElementById('partyTitle');
+    if (pt) pt.textContent = 'Инструменты';
     renderNpcTemplates();
     document.querySelectorAll('.dev-tool').forEach(btn => {
       btn.onclick = () => {
