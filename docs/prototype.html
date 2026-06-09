@@ -874,6 +874,7 @@
     scenarios: [],                // сценарии [{id,name,sceneIds,activeSceneId}] (сервер)
     activeScenarioId: null,       // активный сценарий
     lore: { history: '', notes: '' },  // история/заметки МИРА (wiki — позже)
+    assets: [],                   // библиотека ассетов мира [{assetId,name,kind,url,w,h}]
     scene: { map: null, mapAssetId: null, grid: { size: 48, offsetX: 0, offsetY: 0 },
              fogEnabled: false, notes: '', searchKey: '', description: '' },  // активная сцена
   };
@@ -1060,6 +1061,12 @@
     'world.lore': (msg) => {
       store.lore = { history: msg.history || '', notes: msg.notes || '' };
       renderLore();
+    },
+    // библиотека ассетов мира (карты/токены/портреты) — снапшот при connect и
+    // после загрузки/удаления; файлы на диске, тут только метаданные+ссылки.
+    'assets.snapshot': (msg) => {
+      store.assets = msg.assets || [];
+      if (typeof renderAssetLibrary === 'function') renderAssetLibrary();
     },
   };
 
@@ -2453,6 +2460,10 @@
   let sceneDragSid = null;
   function openSceneBar() { renderSceneBar(); document.getElementById('sceneBar').classList.add('show'); }
   function closeSceneBar() { document.getElementById('sceneBar').classList.remove('show'); }
+  // Заглушка библиотеки ассетов — наполнится в промпте 3. Объявлена, чтобы
+  // handler assets.snapshot мог её звать уже сейчас.
+  function renderAssetLibrary() {}
+
   function renderSceneBar() {
     const strip = document.getElementById('sceneBarStrip');
     if (!strip) return;

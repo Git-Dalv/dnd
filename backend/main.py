@@ -358,6 +358,15 @@ async def broadcast_creatures(room: "Room"):
     await room.broadcast({"type": "creatures.snapshot", "creatures": merged_creatures(room.room_id)})
 
 
+async def broadcast_assets(room_id: str):
+    """Разослать всем в комнате актуальную библиотеку ассетов. Зовётся из HTTP-
+    эндпоинтов загрузки/удаления (комната может быть не поднята — тогда тихо
+    пропускаем; новый участник догонит снапшотом при подключении)."""
+    room = rooms.get(room_id)
+    if room is not None:
+        await room.broadcast({"type": "assets.snapshot", "assets": db.list_assets(room_id)})
+
+
 rooms: dict[str, Room] = {}
 
 
@@ -485,6 +494,8 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     await ws.send_text(json.dumps({"type": "catalog.snapshot", **content_catalog.snapshot()}, ensure_ascii=False))
     # бестиарий: srd + homebrew единым списком (как catalog.snapshot) — для выбора существ
     await ws.send_text(json.dumps({"type": "creatures.snapshot", "creatures": merged_creatures(room_id)}, ensure_ascii=False))
+    # библиотека ассетов мира (карты/токены/портреты) — метаданные+ссылки (файлы на диске)
+    await ws.send_text(json.dumps({"type": "assets.snapshot", "assets": db.list_assets(room_id)}, ensure_ascii=False))
     # лор мира (история + заметки о мире) — виден ВСЕМ (read-only игрокам, правит GM)
     await ws.send_text(json.dumps({"type": "world.lore", **room.lore}, ensure_ascii=False))
     # приватные заметки мастера — только мастеру (игрокам не шлём)
@@ -1131,11 +1142,14 @@ async def api_upload_asset(room_id: str, file: UploadFile = File(...),
     rel = f"{room_id}/{fname}"                # относительный путь от ASSETS_DIR
     url = f"/assets/{rel}"
     w, h = _image_size(data)
-    return db.create_asset(asset_id, room_id, name or fname, kind, rel, url, w, h)
+    meta = db.create_asset(asset_id, room_id, name or fname, kind, rel, url, w, h)
+    # загрузка идёт по HTTP — после неё рассылаем свежую библиотеку всем в комнате
+    await broadcast_assets(room_id)
+    return meta
 
 
 @app.delete("/api/games/{room_id}/assets/{asset_id}")
-def api_delete_asset(room_id: str, asset_id: str):
+async def api_delete_asset(room_id: str, asset_id: str):
     # Удаляем запись и файл с диска. TODO: проверка прав (gm).
     meta = db.get_asset(asset_id)
     if not meta or meta["roomId"] != room_id:
@@ -1146,6 +1160,7 @@ def api_delete_asset(room_id: str, asset_id: str):
             (ASSETS_DIR / path).unlink(missing_ok=True)
         except OSError:
             pass
+    await broadcast_assets(room_id)          # обновить библиотеку у всех в комнате
     return {"ok": True, "assetId": asset_id}
 
 
