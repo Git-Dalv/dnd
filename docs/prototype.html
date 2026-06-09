@@ -153,6 +153,19 @@
   .scene-act:hover { opacity: 1; color: var(--gold-bright); }
   .scene-card-new .scene-card-thumb { font-size: 34px; color: var(--gold-bright); }
 
+  /* галерея ассетов мира (выбор фона сцены из библиотеки) */
+  .sp-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px;
+    max-height: 230px; overflow-y: auto; margin: 4px 0 6px; padding: 2px; }
+  .sp-empty { grid-column: 1 / -1; color: var(--ink-dim); font-style: italic; font-size: 12px; padding: 14px; text-align: center; }
+  .asset-card { border: 1px solid var(--edge-bright); border-radius: 6px; overflow: hidden; cursor: pointer;
+    background: #181309; transition: all .12s; }
+  .asset-card:hover { border-color: var(--gold); }
+  .asset-card.sel { border-color: var(--gold-bright); box-shadow: 0 0 10px rgba(232,200,120,.45); }
+  .asset-thumb { height: 60px; background: #241c14 center/cover no-repeat; }
+  .asset-name { font-size: 10px; color: var(--ink); padding: 4px 5px; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; text-align: center; }
+  .asset-card.sel .asset-name { color: var(--gold-bright); }
+
   /* лор мира — редактор (GM) / read-only текст (игрок) */
   .lore-area { width: 100%; min-height: 130px; background: var(--bg); border: 1px solid var(--edge-bright);
     border-radius: 6px; color: var(--ink); font-family: 'Spectral'; font-size: 14px; padding: 10px;
@@ -2353,10 +2366,12 @@
   function renderMapBg() {
     const bg = document.getElementById('mapBg');
     if (!bg) return;
-    // приоритет — карта dataURL/путь из сцены, иначе загруженный PNG (assets)
+    // фон сцены — ССЫЛКА на ассет мира (store.scene.map = url "/assets/..."),
+    // не dataURL. mapAssetId оставлен фолбэком для старых записей.
     let url = null;
     if (store.scene.map) url = store.scene.map;
     else if (store.scene.mapAssetId) url = `/api/games/${encodeURIComponent(net.room)}/assets/${store.scene.mapAssetId}`;
+    console.log('[map] renderMapBg: store.scene.map =', store.scene.map, '→ background-image url =', url);
     bg.style.backgroundImage = url ? `url("${url}")` : 'none';
   }
   function applyGrid(grid) {
@@ -2460,10 +2475,6 @@
   let sceneDragSid = null;
   function openSceneBar() { renderSceneBar(); document.getElementById('sceneBar').classList.add('show'); }
   function closeSceneBar() { document.getElementById('sceneBar').classList.remove('show'); }
-  // Заглушка библиотеки ассетов — наполнится в промпте 3. Объявлена, чтобы
-  // handler assets.snapshot мог её звать уже сейчас.
-  function renderAssetLibrary() {}
-
   function renderSceneBar() {
     const strip = document.getElementById('sceneBarStrip');
     if (!strip) return;
@@ -2607,9 +2618,8 @@
       }, 'image/png');
     };
 
-    const mapUrl = store.scene.mapAssetId
-      ? `/api/games/${encodeURIComponent(net.room)}/assets/${store.scene.mapAssetId}`
-      : (store.scene.map || null);
+    const mapUrl = store.scene.map
+      || (store.scene.mapAssetId ? `/api/games/${encodeURIComponent(net.room)}/assets/${store.scene.mapAssetId}` : null);
     if (mapUrl) {
       const img = new Image();
       img.onload = () => { ctx.drawImage(img, 0, 0, W, H); drawRest(); };
@@ -2618,20 +2628,28 @@
     } else drawRest();
   }
 
-  // окно параметров сцены (создание sceneId=null / редактирование активной)
-  let sceneParamAssetId = null;   // загруженный mapAssetId (ожидает сохранения)
-  let sceneParamMapData = null;   // dataURL выбранной карты (локально, до отправки)
+  // окно параметров сцены (создание sceneId=null / редактирование активной).
+  // Фон выбирается ИЗ БИБЛИОТЕКИ мира (store.assets) — scene.map = url ассета
+  // (НЕ dataURL). Загрузка карты идёт в библиотеку (POST multipart), оттуда
+  // ассет приходит снапшотом и появляется в галерее.
+  let sceneParamMap = null;       // выбранный фон сцены = url ассета (локально)
+  let sceneParamSceneId = null;   // id редактируемой сцены (null = создаём новую)
   function openSceneParams(sceneId) {
     const editing = !!sceneId;
-    const s = editing ? store.scene : { map: null, mapAssetId: null, fogEnabled: false, notes: '', searchKey: '', description: '', grid: { size: 48 } };
+    const s = editing ? store.scene : { map: null, fogEnabled: false, notes: '', searchKey: '', description: '', grid: { size: 48 } };
     const name = editing ? (store.scenes.find(x => x.id === sceneId) || {}).name || '' : '';
-    sceneParamAssetId = s.mapAssetId || null;
-    sceneParamMapData = s.map || null;     // текущий фон (dataURL/путь) — пока не меняли
+    sceneParamMap = s.map || null;     // текущий фон (url) — пока не меняли
+    sceneParamSceneId = sceneId || null;
     const body = document.getElementById('sceneParamsBody');
     body.innerHTML = `
       <label>Имя сцены</label><input id="sp-name" value="${esc(name)}" placeholder="Пещера гоблинов">
-      <label>Карта (PNG)</label><input type="file" id="sp-map" accept="image/*">
-      <div class="map-prev" id="sp-prev"></div>
+      <label>Фон сцены — карта из библиотеки мира</label>
+      <div class="sp-gallery" id="sp-gallery"></div>
+      <div class="tok-controls">
+        <button class="tok-cond-btn" id="sp-upload-btn">＋ Загрузить карту</button>
+        <input type="file" id="sp-upload" accept="image/png,image/jpeg,image/webp" style="display:none">
+        <span id="sp-upload-msg" style="font-size:11px;color:var(--ink-dim)"></span>
+      </div>
       <label>Размер клетки (px)</label><input type="number" id="sp-grid" value="${(s.grid && s.grid.size) || 48}" min="8" max="256">
       <label style="display:flex;align-items:center;gap:8px;text-transform:none;margin-top:14px">
         <input type="checkbox" id="sp-fog" ${s.fogEnabled ? 'checked' : ''} style="width:auto"> Туман войны включён</label>
@@ -2643,32 +2661,14 @@
         <button class="tok-cond-btn" id="sp-cancel">Отмена</button>
         <button class="tok-cond-btn" id="sp-save" style="color:var(--gold-bright);border-color:var(--gold)">Сохранить</button>
       </div>`;
-    const prev = document.getElementById('sp-prev');
-    const showPrev = () => {
-      const url = sceneParamMapData
-        || (sceneParamAssetId ? `/api/games/${encodeURIComponent(net.room)}/assets/${sceneParamAssetId}` : null);
-      prev.style.backgroundImage = url ? `url("${url}")` : 'none';
-    };
-    showPrev();
-    document.getElementById('sp-map').onchange = async (e) => {
-      const f = e.target.files[0];
-      if (!f) return;
-      try {
-        // Карта едет dataURL'ом В scene.config (источник истины — сервер), а не
-        // в assets-эндпоинт (он требует игру в БД и 404'ит прототип-комнаты).
-        // Сжимаем до ~1600px / jpeg 0.82, чтобы dataURL пролез по WebSocket.
-        sceneParamMapData = await compressImageToDataURL(f, 1600, 0.82);
-        sceneParamAssetId = null;                 // dataURL заменяет старый asset
-        console.log('[scene] map dataURL length =', sceneParamMapData.length);
-        showPrev();
-      } catch (err) { console.warn('[scene] не удалось обработать карту', err); }
-    };
+    renderSceneGallery();
+    document.getElementById('sp-upload-btn').onclick = () => document.getElementById('sp-upload').click();
+    document.getElementById('sp-upload').onchange = (e) => uploadMapToLibrary(e.target.files[0]);
     document.getElementById('sp-cancel').onclick = () => document.getElementById('sceneParamsWin').classList.remove('show');
     document.getElementById('sp-save').onclick = () => {
       const payload = {
         name: document.getElementById('sp-name').value.trim() || 'Сцена',
-        map: sceneParamMapData || null,            // dataURL карты (источник истины — сервер)
-        mapAssetId: sceneParamAssetId || null,
+        map: sceneParamMap || null,                // ССЫЛКА на ассет (url), не dataURL
         grid: { size: parseInt(document.getElementById('sp-grid').value, 10) || 48 },
         fogEnabled: document.getElementById('sp-fog').checked,
         notes: document.getElementById('sp-notes').value,
@@ -2682,26 +2682,53 @@
     };
     document.getElementById('sceneParamsWin').classList.add('show');
   }
-  // Сжать выбранный файл карты в dataURL: ≤ maxSide по большей стороне, jpeg
-  // quality. Маленький dataURL едет в scene.config (а не в assets-эндпоинт),
-  // поэтому работает и для прототип-комнат без строки в БД.
-  function compressImageToDataURL(file, maxSide, quality) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        let w = img.naturalWidth, h = img.naturalHeight;
-        const scale = Math.min(1, maxSide / Math.max(w, h));
-        w = Math.max(1, Math.round(w * scale));
-        h = Math.max(1, Math.round(h * scale));
-        const cv = document.createElement('canvas');
-        cv.width = w; cv.height = h;
-        cv.getContext('2d').drawImage(img, 0, 0, w, h);
-        URL.revokeObjectURL(img.src);
-        resolve(cv.toDataURL('image/jpeg', quality));
-      };
-      img.onerror = () => { URL.revokeObjectURL(img.src); reject(new Error('image load failed')); };
-      img.src = URL.createObjectURL(file);
+
+  // Галерея карт мира внутри окна сцены. Клик = выбрать фон: подсветить и (для
+  // редактируемой сцены) сразу применить через scene.config {sceneId, map:url}.
+  function renderSceneGallery() {
+    const host = document.getElementById('sp-gallery');
+    if (!host) return;
+    const maps = (store.assets || []).filter(a => a.kind === 'map');
+    if (!maps.length) { host.innerHTML = '<div class="sp-empty">Библиотека пуста — загрузите карту</div>'; return; }
+    host.innerHTML = maps.map(a =>
+      `<div class="asset-card${a.url === sceneParamMap ? ' sel' : ''}" data-url="${esc(a.url)}" title="${esc(a.name)}">`
+      + `<div class="asset-thumb" style="background-image:url('${esc(a.url)}')"></div>`
+      + `<div class="asset-name">${esc(a.name)}</div></div>`).join('');
+    host.querySelectorAll('[data-url]').forEach(el => el.onclick = () => {
+      sceneParamMap = el.dataset.url;
+      renderSceneGallery();                          // подсветить выбранный
+      if (sceneParamSceneId) net.send({ type: 'scene.config', sceneId: sceneParamSceneId, map: sceneParamMap });
     });
+  }
+
+  // Перерисовать галерею при обновлении библиотеки (handler assets.snapshot),
+  // если окно сцены открыто. Имя сохранено по контракту промпта 2.
+  function renderAssetLibrary() {
+    if (document.getElementById('sp-gallery') &&
+        document.getElementById('sceneParamsWin').classList.contains('show')) {
+      renderSceneGallery();
+    }
+  }
+
+  // Загрузка карты В БИБЛИОТЕКУ мира (multipart, kind=map). Файл едет по HTTP на
+  // диск; ассет вернётся снапшотом и появится в галерее. Сразу выбираем фоном.
+  async function uploadMapToLibrary(file) {
+    if (!file) return;
+    const msg = document.getElementById('sp-upload-msg');
+    if (msg) msg.textContent = 'Загрузка…';
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('name', file.name.replace(/\.[^.]+$/, ''));
+      fd.append('kind', 'map');
+      const res = await fetch(`/api/games/${encodeURIComponent(net.room)}/assets`, { method: 'POST', body: fd });
+      if (!res.ok) throw new Error('http ' + res.status);
+      const a = await res.json();
+      if (msg) msg.textContent = 'Готово';
+      sceneParamMap = a.url;                         // сразу выбрать загруженную картой фоном
+      if (sceneParamSceneId) net.send({ type: 'scene.config', sceneId: sceneParamSceneId, map: a.url });
+      renderSceneGallery();                          // assets.snapshot тоже перерисует
+    } catch (e) { if (msg) msg.textContent = 'Ошибка загрузки'; console.warn('[asset] upload failed', e); }
   }
   function openGridTool() {
     const g = store.scene.grid || { size: 48, offsetX: 0, offsetY: 0 };
