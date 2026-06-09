@@ -480,6 +480,8 @@ async def ws_endpoint(ws: WebSocket, room_id: str, member_id: str):
     await ws.send_text(json.dumps({"type": "catalog.snapshot", **content_catalog.snapshot()}, ensure_ascii=False))
     # бестиарий: srd + homebrew единым списком (как catalog.snapshot) — для выбора существ
     await ws.send_text(json.dumps({"type": "creatures.snapshot", "creatures": merged_creatures(room_id)}, ensure_ascii=False))
+    # лор мира (история + заметки о мире) — виден ВСЕМ (read-only игрокам, правит GM)
+    await ws.send_text(json.dumps({"type": "world.lore", **room.lore}, ensure_ascii=False))
     # приватные заметки мастера — только мастеру (игрокам не шлём)
     if role == "gm":
         await ws.send_text(json.dumps({"type": "notes.snapshot", "notes": room.notes}, ensure_ascii=False))
@@ -688,6 +690,18 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
             return
         room.notes = str(msg.get("notes", ""))
         room.persist_tokens()                 # пишем в games.state
+        return
+
+    # --- лор мира (gm-only): история+заметки о мире; видны ВСЕМ (read-only) ---
+    if mtype == "lore.set":
+        if not require_gm(room.members.get(member_id)):
+            return
+        if "history" in msg:
+            room.lore["history"] = str(msg.get("history") or "")
+        if "notes" in msg:
+            room.lore["notes"] = str(msg.get("notes") or "")
+        await room.broadcast({"type": "world.lore", **room.lore})
+        room.persist_tokens()                 # пишем в games.state (state.lore)
         return
 
     # --- сцены (gm-only): создать / переключить / настроить фон-сетку ---

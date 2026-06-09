@@ -152,6 +152,17 @@
   .scene-act { cursor: pointer; opacity: .55; font-size: 13px; }
   .scene-act:hover { opacity: 1; color: var(--gold-bright); }
   .scene-card-new .scene-card-thumb { font-size: 34px; color: var(--gold-bright); }
+
+  /* лор мира — редактор (GM) / read-only текст (игрок) */
+  .lore-area { width: 100%; min-height: 130px; background: var(--bg); border: 1px solid var(--edge-bright);
+    border-radius: 6px; color: var(--ink); font-family: 'Spectral'; font-size: 14px; padding: 10px;
+    resize: vertical; margin-bottom: 6px; line-height: 1.5; }
+  .lore-area:focus { outline: none; border-color: var(--gold); }
+  .lore-read { background: var(--bg); border: 1px solid var(--edge); border-radius: 6px; color: var(--ink);
+    font-family: 'Spectral'; font-size: 14px; padding: 10px; min-height: 60px; white-space: pre-wrap;
+    line-height: 1.5; margin-bottom: 12px; }
+  .lore-read .lore-empty { color: var(--ink-dim); font-style: italic; }
+  .lore-saved { font-size: 11px; color: var(--gold-bright); margin-left: 8px; }
   /* zoom controls — поверх мира, в углу сцены */
   .zoom-ctl { position: absolute; bottom: 14px; left: 16px; z-index: 6; display: flex; flex-direction: column; gap: 4px; }
   .zoom-ctl button { width: 30px; height: 30px; background: linear-gradient(180deg, var(--panel-2), var(--panel));
@@ -557,6 +568,7 @@
     <div class="nav-tab" data-view="log">Журнал</div>
     <div class="nav-tab" data-view="sheet">Карточка персонажа</div>
     <div class="nav-tab" data-view="codex">Справочник</div>
+    <div class="nav-tab" id="navWorld">🌍 О мире</div>
     <div class="nav-spacer"></div>
     <div class="nav-exit" id="navExit">⮜ Выход</div>
   </div>
@@ -806,6 +818,16 @@
     <div class="win-body"><textarea id="notesArea" placeholder="Секреты, подготовка к сцене… (видно только вам)" style="width:100%;min-height:240px;background:var(--bg);border:1px solid var(--edge-bright);border-radius:6px;color:var(--ink);font-family:'Spectral';font-size:14px;padding:10px;resize:vertical;"></textarea></div>
   </div>
 </div>
+<!-- лор мира: общая история + заметки о мире (видны всем; правит GM) -->
+<div class="win-back" id="worldLoreWin">
+  <div class="win">
+    <div class="win-head">
+      <h3>🌍 О мире</h3>
+      <button class="win-x" id="worldLoreX">✕</button>
+    </div>
+    <div class="win-body" id="worldLoreBody"></div>
+  </div>
+</div>
 
 <script>
   // ===================================================================
@@ -1028,6 +1050,11 @@
     'notes.snapshot': (msg) => {
       const ta = document.getElementById('notesArea');
       if (ta) ta.value = msg.notes || '';
+    },
+    // лор мира (история + заметки) — виден всем; правит GM. Перерисовать окно.
+    'world.lore': (msg) => {
+      store.lore = { history: msg.history || '', notes: msg.notes || '' };
+      renderLore();
     },
   };
 
@@ -1284,6 +1311,7 @@
   // left nav -> center view switch
   const views = ['map','journal','quests','log','sheet','codex'];
   document.querySelectorAll('.nav-tab').forEach(tab => {
+    if (!tab.dataset.view) return;     // напр. «О мире» — открывает окно, не вид
     tab.onclick = () => {
       document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
@@ -1865,6 +1893,42 @@
       notesTimer = setTimeout(() => net.send({ type: 'notes.set', notes: notesArea.value }), 500);
     };
   }
+
+  // Лор мира: «О мире» — общая история + заметки о мире. Видны ВСЕМ (read-only
+  // игрокам), правит только GM (по blur и кнопке Сохранить → lore.set). В store
+  // не пишем сами — ждём world.lore от сервера (как notes/scene.*).
+  function openWorldLore() { renderLore(); document.getElementById('worldLoreWin').classList.add('show'); }
+  function renderLore() {
+    const body = document.getElementById('worldLoreBody');
+    if (!body) return;
+    const isGm = store.me && store.me.role === 'gm';
+    const lore = store.lore || { history: '', notes: '' };
+    if (isGm) {
+      body.innerHTML =
+        `<label>История мира</label>`
+        + `<textarea id="loreHistory" class="lore-area" placeholder="Общая история мира (видна всем игрокам)">${esc(lore.history)}</textarea>`
+        + `<label>Заметки о мире</label>`
+        + `<textarea id="loreNotes" class="lore-area" placeholder="Факты, имена, зацепки о мире (видны всем)">${esc(lore.notes)}</textarea>`
+        + `<div class="tok-controls"><button class="tok-cond-btn" id="loreSave">Сохранить</button><span class="lore-saved" id="loreSaved"></span></div>`;
+      const save = () => {
+        net.send({ type: 'lore.set',
+          history: document.getElementById('loreHistory').value,
+          notes: document.getElementById('loreNotes').value });
+        const sv = document.getElementById('loreSaved');
+        if (sv) { sv.textContent = '✓ Сохранено'; setTimeout(() => { if (sv) sv.textContent = ''; }, 1500); }
+      };
+      document.getElementById('loreSave').onclick = save;
+      document.getElementById('loreHistory').onblur = save;   // автосохранение по уходу из поля
+      document.getElementById('loreNotes').onblur = save;
+    } else {
+      const block = (title, text) => `<label>${title}</label>`
+        + `<div class="lore-read">${text ? esc(text) : '<span class="lore-empty">— пусто —</span>'}</div>`;
+      body.innerHTML = block('История мира', lore.history) + block('Заметки о мире', lore.notes);
+    }
+  }
+  { const x = document.getElementById('worldLoreX'); if (x) x.onclick = () => document.getElementById('worldLoreWin').classList.remove('show'); }
+  { const back = document.getElementById('worldLoreWin'); back.onclick = (e) => { if (e.target === back) back.classList.remove('show'); }; }
+  { const nw = document.getElementById('navWorld'); if (nw) nw.onclick = () => openWorldLore(); }
 
   // Пульт мастера (gm-only по виду; сервер всё равно проверяет права).
   document.querySelectorAll('.dm-btn').forEach(b => {
