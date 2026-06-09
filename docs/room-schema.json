@@ -22,9 +22,10 @@
         {
           "id": "scene_tavern",
           "name": "Yawning Portal",
-          "map": "assets/maps/tavern.jpg",
+          "map": "/assets/room_dragonheist/asset_tavern.jpg",
           "mapAssetId": null,
           "grid": { "size": 70, "type": "square", "offsetX": 0, "offsetY": 0 },
+          "mapTransform": { "x": 0, "y": 0, "scale": 1 },
           "fogEnabled": false,
           "notes": "Трактир: вход свободный, тайная дверь за стойкой.",
           "searchKey": "таверна город",
