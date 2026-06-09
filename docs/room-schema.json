@@ -1,5 +1,5 @@
 {
-  "_comment": "Состояние игровой комнаты. Сервер хранит ПОЛНУЮ версию, игрокам рассылает урезанную (без hidden-токенов и нераскрытого тумана). Координаты токенов — в клетках.",
+  "_comment": "Состояние игрового МИРА (=комната/игра, room_id). Сервер хранит ПОЛНУЮ версию, игрокам рассылает урезанную (без hidden-токенов и нераскрытого тумана). Координаты токенов — в клетках. ИЕРАРХИЯ: Мир(room) → scenarios[] → scenes[] → tokens/fog/grid/map. Сцены ВЛОЖЕНЫ внутрь сценария; активны и activeScenarioId, и activeSceneId. Бестиарий — НЕ здесь (глобальный справочник вне мира).",
   "roomId": "room_dragonheist",
   "name": "Waterdeep: Dragon Heist",
   "gmId": "player_vlad",
@@ -8,27 +8,37 @@
     { "id": "player_dana", "name": "Dana", "role": "player", "charId": "char_a1b2", "connected": true },
     { "id": "player_max", "name": "Max", "role": "player", "charId": "char_c3d4", "connected": false }
   ],
+  "_comment_lore": "Заметки/история МИРА (отдельно от приватных notes мастера). UI wiki — позже.",
+  "lore": { "history": "Город интриг под сенью Глубоководья.", "notes": "" },
+  "activeScenarioId": "scenario_1",
   "activeSceneId": "scene_tavern",
-  "_comment_scene": "Сцена: map — путь к предзагруженной карте из библиотеки; mapAssetId — id загруженного PNG из таблицы assets (клиент рисует его, если есть, иначе map). fogEnabled — ВКЛючён ли туман (по умолчанию false: город без тумана, пещеру включают). notes/searchKey/description — мета для мастера. fog применяется только при fogEnabled.",
-  "scenes": [
+  "_comment_scenarios": "Сценарий — слой между миром и сценами: именованный набор вложенных сцен со своей activeSceneId. Сцена: map — путь к предзагруженной карте; mapAssetId — id загруженного PNG из таблицы assets (клиент рисует его, если есть, иначе map). fogEnabled — включён ли туман (по умолчанию false: город без тумана). notes/searchKey/description — мета для мастера. fog применяется только при fogEnabled.",
+  "scenarios": [
     {
-      "id": "scene_tavern",
-      "name": "Yawning Portal",
-      "map": "assets/maps/tavern.jpg",
-      "mapAssetId": null,
-      "grid": { "size": 70, "type": "square", "offsetX": 0, "offsetY": 0 },
-      "fogEnabled": false,
-      "notes": "Трактир: вход свободный, тайная дверь за стойкой.",
-      "searchKey": "таверна город",
-      "description": "Шумный трактир «Зевающий портал».",
-      "tokens": [
-        { "id": "tok_dana", "charId": "char_a1b2", "name": "Лиэндра", "img": "assets/tokens/leandra.png",
-          "x": 5, "y": 8, "size": 1, "controlledBy": "player_dana",
-          "hpBar": { "current": 22, "max": 27 }, "conditions": ["concentration"] },
-        { "id": "tok_goblin1", "name": "Goblin", "img": "assets/tokens/goblin.png",
-          "x": 9, "y": 6, "size": 1, "controlledBy": "gm", "hidden": true }
-      ],
-      "fog": { "enabled": true, "revealed": [[4,7],[5,7],[5,8]] }
+      "id": "scenario_1",
+      "name": "Сценарий 1",
+      "activeSceneId": "scene_tavern",
+      "scenes": [
+        {
+          "id": "scene_tavern",
+          "name": "Yawning Portal",
+          "map": "assets/maps/tavern.jpg",
+          "mapAssetId": null,
+          "grid": { "size": 70, "type": "square", "offsetX": 0, "offsetY": 0 },
+          "fogEnabled": false,
+          "notes": "Трактир: вход свободный, тайная дверь за стойкой.",
+          "searchKey": "таверна город",
+          "description": "Шумный трактир «Зевающий портал».",
+          "tokens": [
+            { "id": "tok_dana", "charId": "char_a1b2", "name": "Лиэндра", "img": "assets/tokens/leandra.png",
+              "x": 5, "y": 8, "size": 1, "controlledBy": "player_dana",
+              "hpBar": { "current": 22, "max": 27 }, "conditions": ["concentration"] },
+            { "id": "tok_goblin1", "name": "Goblin", "img": "assets/tokens/goblin.png",
+              "x": 9, "y": 6, "size": 1, "controlledBy": "gm", "hidden": true }
+          ],
+          "fog": { "enabled": true, "revealed": [[4,7],[5,7],[5,8]] }
+        }
+      ]
     }
   ],
   "combat": { "active": false, "round": 0, "turnIndex": 0, "order": [] },

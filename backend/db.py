@@ -78,6 +78,31 @@ CREATE TABLE IF NOT EXISTS creatures (
 );
 CREATE INDEX IF NOT EXISTS idx_creatures_room ON creatures(room_id);
 
+-- Wiki мира (закладываем схему сразу, UI позже). Фракции и досье — пер-мир
+-- (room_id), как персонажи/существа: реляционные колонки для списка + JSON-блоб.
+-- Пока НИКЕМ не используются; таблицы заводятся, чтобы база миров была полной.
+CREATE TABLE IF NOT EXISTS factions (
+    faction_id  TEXT PRIMARY KEY,
+    room_id     TEXT NOT NULL REFERENCES games(room_id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    data        TEXT NOT NULL,            -- полная фракция блобом
+    created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_factions_room ON factions(room_id);
+
+-- Досье (dossier): запись о персонаже/NPC мира. char_id опц. связывает с листом
+-- персонажа (characters), kind различает игроков и NPC.
+CREATE TABLE IF NOT EXISTS dossiers (
+    dossier_id  TEXT PRIMARY KEY,
+    room_id     TEXT NOT NULL REFERENCES games(room_id) ON DELETE CASCADE,
+    kind        TEXT,                     -- 'pc' | 'npc'
+    name        TEXT NOT NULL,
+    char_id     TEXT,                     -- опц. ссылка на characters.char_id
+    data        TEXT NOT NULL,            -- полное досье блобом
+    created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dossiers_room ON dossiers(room_id);
+
 -- Бинарь карт (и в будущем токенов/портретов), привязан к игре. Картинки
 -- ТЯЖЁЛЫЕ — храним в отдельной таблице, не в games.state, и отдаём по HTTP с
 -- кэшем браузера (не гоняем через WebSocket-снапшоты).
@@ -254,6 +279,100 @@ def list_creatures(room_id: str) -> list[dict]:
     with connect() as conn:
         rows = conn.execute(
             "SELECT data FROM creatures WHERE room_id=? ORDER BY created_at", (room_id,)
+        ).fetchall()
+    return [json.loads(r["data"]) for r in rows]
+
+
+# ---- wiki мира: фракции (по образцу персонажей; пока никем не зовётся) ------
+
+def create_faction(faction_id: str, room_id: str, data: dict) -> dict:
+    now = int(time.time())
+    data = dict(data)
+    data.setdefault("id", faction_id)
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO factions (faction_id, room_id, name, data, created_at) VALUES (?,?,?,?,?)",
+            (faction_id, room_id, data.get("name", "?"),
+             json.dumps(data, ensure_ascii=False), now),
+        )
+    return data
+
+
+def update_faction(faction_id: str, data: dict) -> bool:
+    data = dict(data)
+    data.setdefault("id", faction_id)
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE factions SET name=?, data=? WHERE faction_id=?",
+            (data.get("name", "?"), json.dumps(data, ensure_ascii=False), faction_id),
+        )
+        return cur.rowcount > 0
+
+
+def delete_faction(faction_id: str) -> bool:
+    with connect() as conn:
+        cur = conn.execute("DELETE FROM factions WHERE faction_id=?", (faction_id,))
+        return cur.rowcount > 0
+
+
+def get_faction(faction_id: str) -> dict | None:
+    with connect() as conn:
+        row = conn.execute("SELECT data FROM factions WHERE faction_id=?", (faction_id,)).fetchone()
+    return json.loads(row["data"]) if row else None
+
+
+def list_factions(room_id: str) -> list[dict]:
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT data FROM factions WHERE room_id=? ORDER BY created_at", (room_id,)
+        ).fetchall()
+    return [json.loads(r["data"]) for r in rows]
+
+
+# ---- wiki мира: досье (kind 'pc'|'npc', опц. char_id; пока никем не зовётся) -
+
+def create_dossier(dossier_id: str, room_id: str, data: dict) -> dict:
+    now = int(time.time())
+    data = dict(data)
+    data.setdefault("id", dossier_id)
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO dossiers (dossier_id, room_id, kind, name, char_id, data, created_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (dossier_id, room_id, data.get("kind"), data.get("name", "?"),
+             data.get("charId"), json.dumps(data, ensure_ascii=False), now),
+        )
+    return data
+
+
+def update_dossier(dossier_id: str, data: dict) -> bool:
+    data = dict(data)
+    data.setdefault("id", dossier_id)
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE dossiers SET kind=?, name=?, char_id=?, data=? WHERE dossier_id=?",
+            (data.get("kind"), data.get("name", "?"), data.get("charId"),
+             json.dumps(data, ensure_ascii=False), dossier_id),
+        )
+        return cur.rowcount > 0
+
+
+def delete_dossier(dossier_id: str) -> bool:
+    with connect() as conn:
+        cur = conn.execute("DELETE FROM dossiers WHERE dossier_id=?", (dossier_id,))
+        return cur.rowcount > 0
+
+
+def get_dossier(dossier_id: str) -> dict | None:
+    with connect() as conn:
+        row = conn.execute("SELECT data FROM dossiers WHERE dossier_id=?", (dossier_id,)).fetchone()
+    return json.loads(row["data"]) if row else None
+
+
+def list_dossiers(room_id: str) -> list[dict]:
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT data FROM dossiers WHERE room_id=? ORDER BY created_at", (room_id,)
         ).fetchall()
     return [json.loads(r["data"]) for r in rows]
 

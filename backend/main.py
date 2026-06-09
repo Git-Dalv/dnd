@@ -163,6 +163,22 @@ def new_scene(sid: str, name: str, tokens: dict | None = None, **extra) -> dict:
     }
 
 
+# Иерархия мира (CLAUDE.md): Мир(room) → scenarios[] → scenes{} → tokens/fog/grid/map.
+# Сцены ВЛОЖЕНЫ в сценарий (scenario["scenes"] = {sid: scene}); активны и
+# activeScenarioId, и activeSceneId. Дефолтный сценарий-обёртка для новой игры
+# и для миграции старого плоского state.
+DEFAULT_SCENARIO_ID = "scenario_default"
+
+
+def new_scenario(scid: str, name: str, scenes: dict | None = None,
+                 active_scene_id: str | None = None) -> dict:
+    """Каноническая структура сценария: имя + словарь вложенных сцен + своя
+    активная сцена (чтобы переключение сценария возвращало на последнюю сцену)."""
+    return {"id": scid, "name": name,
+            "scenes": scenes if scenes is not None else {},
+            "activeSceneId": active_scene_id}
+
+
 @dataclass
 class Room:
     room_id: str
@@ -173,27 +189,56 @@ class Room:
     # состояние боя (по образцу room-schema) и режим сцены — сессионное состояние
     combat: dict = field(default_factory=lambda: {"active": False, "round": 0, "turnIndex": 0, "order": []})
     mode: str = "explore"  # 'explore' | 'combat'
-    # сцены: токены/туман живут В АКТИВНОЙ сцене. tokens/fog делегируют туда —
-    # обработчики token.*/fog.* остаются без изменений. id -> сцена.
-    scenes: dict[str, dict] = field(default_factory=dict)
-    active_scene_id: str | None = None
-    # сценарий — именованный набор сцен (группировка по sceneIds), привязан к игре
+    # ИЕРАРХИЯ (CLAUDE.md): мир → scenarios{} → scenes{} → tokens/fog/grid/map.
+    # Сцены ВЛОЖЕНЫ в сценарий (scenario["scenes"][sid]); токены/туман живут в
+    # активной сцене активного сценария. tokens/fog делегируют туда — обработчики
+    # token.*/fog.* без изменений. Активны и сценарий, и сцена.
     scenarios: dict[str, dict] = field(default_factory=dict)
     active_scenario_id: str | None = None
+    active_scene_id: str | None = None
+    lore: dict = field(default_factory=lambda: {"history": "", "notes": ""})  # история/заметки МИРА
     notes: str = ""   # приватные заметки мастера (видны только gm, в БД)
 
     def scenario_list(self) -> dict:
-        return {"scenarios": list(self.scenarios.values()),
+        """Лёгкий список сценариев (без вложенных сцен-блобов): id/имя + id сцен
+        (sceneIds для совместимости клиента) + своя активная сцена."""
+        return {"scenarios": [{"id": sc["id"], "name": sc["name"],
+                               "sceneIds": list(sc["scenes"].keys()),
+                               "activeSceneId": sc.get("activeSceneId")}
+                              for sc in self.scenarios.values()],
                 "activeScenarioId": self.active_scenario_id}
 
     def ensure_scene(self) -> dict:
-        """Гарантирует наличие активной сцены (дефолтная — со стартовой раскладкой)."""
-        if not self.scenes:
-            self.scenes["scene_default"] = new_scene(
+        """Гарантирует дефолтный сценарий «Сценарий 1» с дефолтной сценой и
+        валидные active_scenario_id/active_scene_id. Возвращает активную сцену."""
+        if not self.scenarios:
+            scene = new_scene("scene_default", "Сцена 1",
+                              {t["id"]: dict(t) for t in DEFAULT_TOKENS})
+            self.scenarios[DEFAULT_SCENARIO_ID] = new_scenario(
+                DEFAULT_SCENARIO_ID, "Сценарий 1", {"scene_default": scene}, "scene_default")
+            self.active_scenario_id = DEFAULT_SCENARIO_ID
+            self.active_scene_id = "scene_default"
+        if self.active_scenario_id not in self.scenarios:
+            self.active_scenario_id = next(iter(self.scenarios))
+        scenario = self.scenarios[self.active_scenario_id]
+        scenes = scenario["scenes"]
+        if not scenes:                  # сценарий без сцен — заводим дефолтную
+            scenes["scene_default"] = new_scene(
                 "scene_default", "Сцена 1", {t["id"]: dict(t) for t in DEFAULT_TOKENS})
-        if self.active_scene_id not in self.scenes:
-            self.active_scene_id = next(iter(self.scenes))
-        return self.scenes[self.active_scene_id]
+            scenario["activeSceneId"] = "scene_default"
+        if self.active_scene_id not in scenes:
+            fallback = scenario.get("activeSceneId")
+            self.active_scene_id = fallback if fallback in scenes else next(iter(scenes))
+        scenario["activeSceneId"] = self.active_scene_id
+        return scenes[self.active_scene_id]
+
+    def active_scenario(self) -> dict:
+        self.ensure_scene()
+        return self.scenarios[self.active_scenario_id]
+
+    def active_scenes(self) -> dict:
+        """Сцены активного сценария (sid -> scene)."""
+        return self.active_scenario()["scenes"]
 
     @property
     def tokens(self) -> dict:           # позиции токенов АКТИВНОЙ сцены (в памяти, «тик»)
@@ -207,10 +252,10 @@ class Room:
         return [[x, y] for (x, y) in self.fog]
 
     def seed_tokens_if_empty(self):
-        self.ensure_scene()             # достаточно гарантировать дефолтную сцену
+        self.ensure_scene()             # достаточно гарантировать дефолтный сценарий+сцену
 
-    def scene_state(self, sid: str) -> dict:
-        s = self.scenes[sid]
+    def _scene_serialize(self, s: dict) -> dict:
+        """Полная сериализация сцены (для клиента и БД): fog set → list."""
         return {"id": s["id"], "name": s["name"], "map": s.get("map"),
                 "mapAssetId": s.get("mapAssetId"), "grid": s.get("grid", dict(DEFAULT_GRID)),
                 "fogEnabled": bool(s.get("fogEnabled", False)),
@@ -219,22 +264,37 @@ class Room:
                 "tokens": list(s["tokens"].values()),
                 "fog": [[x, y] for (x, y) in s["fog"]]}
 
+    def scene_state(self, sid: str) -> dict:
+        return self._scene_serialize(self.active_scenes()[sid])
+
     def scene_list(self) -> dict:
-        return {"scenes": [{"id": s["id"], "name": s["name"]} for s in self.scenes.values()],
+        """Сцены АКТИВНОГО сценария + его активная сцена."""
+        scenes = self.active_scenes()
+        return {"scenes": [{"id": s["id"], "name": s["name"]} for s in scenes.values()],
                 "activeSceneId": self.active_scene_id}
 
+    def scenarios_state(self) -> list:
+        """Полная сериализация всех сценариев со вложенными сценами (для БД)."""
+        return [{"id": sc["id"], "name": sc["name"],
+                 "activeSceneId": sc.get("activeSceneId"),
+                 "scenes": [self._scene_serialize(s) for s in sc["scenes"].values()]}
+                for sc in self.scenarios.values()]
+
     def persist_tokens(self):
-        """Снапшот сцен в БД на СЕССИОННЫХ событиях (дисконнект GM, NPC, бой, сцены).
+        """Снапшот мира в БД на СЕССИОННЫХ событиях (дисконнект GM, NPC, бой, сцены).
         НЕ зовём на каждый token.move (позиции — «тик»). Мерджим в state."""
+        self.ensure_scene()
         state = db.get_game_state(self.room_id)
-        # scene_state даёт полную сериализацию сцены (вкл. mapAssetId/fogEnabled/notes/...)
-        state["scenes"] = [self.scene_state(sid) for sid in self.scenes]
-        state["activeSceneId"] = self.active_scene_id
-        state["scenarios"] = self.scenarios
+        state["scenarios"] = self.scenarios_state()
         state["activeScenarioId"] = self.active_scenario_id
+        state["activeSceneId"] = self.active_scene_id
+        state["lore"] = self.lore
         state["combat"] = self.combat
         state["mode"] = self.mode
         state["notes"] = self.notes
+        # вычищаем старые плоские поля, чтобы миграция не путалась при перезапуске
+        for legacy in ("scenes", "tokens", "fog"):
+            state.pop(legacy, None)
         db.save_game_state(self.room_id, state)
 
     async def broadcast(self, message: dict):
@@ -303,39 +363,71 @@ def get_room(room_id: str) -> Room:
                 room.name = g["name"]
                 room.gm_id = g["gmId"]
                 break
-        # сцены поднимаем из сохранённого состояния; сид — только фолбэк
+        # мир поднимаем из сохранённого состояния; сид (ensure_scene) — фолбэк.
+        # Поддерживаем три формы state ради миграции (не падаем на пустом/битом):
+        #   1) НОВАЯ: scenarios=[{id,name,activeSceneId,scenes:[...]}] — иерархия.
+        #   2) старая плоская: scenes=[...]            → обернуть в «Сценарий 1».
+        #   3) совсем старая: tokens=[...] (до сцен)   → одна дефолтная сцена.
         state = db.get_game_state(room_id)
-        scenes = state.get("scenes")
-        if isinstance(scenes, list) and scenes:
-            for s in scenes:
-                sid = s.get("id")
-                if not sid:
+
+        def _scene_from_serialized(s: dict):
+            sid = s.get("id")
+            if not sid:
+                return None, None
+            sc = new_scene(sid, s.get("name", "Сцена"),
+                           {t["id"]: dict(t) for t in (s.get("tokens") or []) if t.get("id")},
+                           map=s.get("map"), mapAssetId=s.get("mapAssetId"),
+                           grid=s.get("grid"), fogEnabled=s.get("fogEnabled", False),
+                           notes=s.get("notes", ""), searchKey=s.get("searchKey", ""),
+                           description=s.get("description", ""))
+            sc["fog"] = set((int(c[0]), int(c[1])) for c in (s.get("fog") or []) if len(c) == 2)
+            return sid, sc
+
+        scenarios_data = state.get("scenarios")
+        is_new = (isinstance(scenarios_data, list) and scenarios_data
+                  and all(isinstance(x, dict) and "scenes" in x for x in scenarios_data))
+        if is_new:
+            for scd in scenarios_data:
+                scid = scd.get("id")
+                if not scid:
                     continue
-                sc = new_scene(sid, s.get("name", "Сцена"),
-                               {t["id"]: dict(t) for t in (s.get("tokens") or []) if t.get("id")},
-                               map=s.get("map"), mapAssetId=s.get("mapAssetId"),
-                               grid=s.get("grid"), fogEnabled=s.get("fogEnabled", False),
-                               notes=s.get("notes", ""), searchKey=s.get("searchKey", ""),
-                               description=s.get("description", ""))
-                sc["fog"] = set((int(c[0]), int(c[1])) for c in (s.get("fog") or []) if len(c) == 2)
-                room.scenes[sid] = sc
-            room.active_scene_id = state.get("activeSceneId") or next(iter(room.scenes))
+                scenes = {}
+                for s in (scd.get("scenes") or []):
+                    sid, sc = _scene_from_serialized(s)
+                    if sid:
+                        scenes[sid] = sc
+                room.scenarios[scid] = new_scenario(
+                    scid, scd.get("name", "Сценарий"), scenes, scd.get("activeSceneId"))
+            room.active_scenario_id = state.get("activeScenarioId") or (next(iter(room.scenarios), None))
+            room.active_scene_id = state.get("activeSceneId")
+        elif isinstance(state.get("scenes"), list) and state["scenes"]:
+            scenes = {}
+            for s in state["scenes"]:
+                sid, sc = _scene_from_serialized(s)
+                if sid:
+                    scenes[sid] = sc
+            active = state.get("activeSceneId") or (next(iter(scenes), None))
+            room.scenarios[DEFAULT_SCENARIO_ID] = new_scenario(
+                DEFAULT_SCENARIO_ID, "Сценарий 1", scenes, active)
+            room.active_scenario_id = DEFAULT_SCENARIO_ID
+            room.active_scene_id = active
         elif isinstance(state.get("tokens"), list) and state["tokens"]:
-            # миграция старого «плоского» состояния (до сцен) в дефолтную сцену
             sc = new_scene("scene_default", "Сцена 1",
                            {t["id"]: dict(t) for t in state["tokens"] if t.get("id")})
             sc["fog"] = set((int(c[0]), int(c[1])) for c in (state.get("fog") or []) if len(c) == 2)
-            room.scenes["scene_default"] = sc
+            room.scenarios[DEFAULT_SCENARIO_ID] = new_scenario(
+                DEFAULT_SCENARIO_ID, "Сценарий 1", {"scene_default": sc}, "scene_default")
+            room.active_scenario_id = DEFAULT_SCENARIO_ID
             room.active_scene_id = "scene_default"
+        if isinstance(state.get("lore"), dict):
+            room.lore = {"history": str(state["lore"].get("history", "")),
+                         "notes": str(state["lore"].get("notes", ""))}
         if isinstance(state.get("combat"), dict):
             room.combat = state["combat"]
         if state.get("mode") in ("explore", "combat"):
             room.mode = state["mode"]
         if isinstance(state.get("notes"), str):
             room.notes = state["notes"]
-        if isinstance(state.get("scenarios"), dict):
-            room.scenarios = state["scenarios"]
-            room.active_scenario_id = state.get("activeScenarioId")
         rooms[room_id] = room
     room.seed_tokens_if_empty()   # фолбэк: новая игра без сохранённой раскладки
     return room
@@ -596,35 +688,32 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
         return
 
     # --- сцены (gm-only): создать / переключить / настроить фон-сетку ---
+    # Сцена живёт ВНУТРИ активного сценария (scenario["scenes"]).
     if mtype == "scene.create":
         if not require_gm(room.members.get(member_id)):
             return
+        scenario = room.active_scenario()      # гарантирует дефолтный сценарий
         sid = "scene_" + secrets.token_hex(3)
-        room.scenes[sid] = new_scene(
+        scenario["scenes"][sid] = new_scene(
             sid, msg.get("name") or "Новая сцена",
             map=msg.get("map"), mapAssetId=msg.get("mapAssetId"), grid=msg.get("grid"),
             fogEnabled=msg.get("fogEnabled", False), notes=msg.get("notes", ""),
             searchKey=msg.get("searchKey", ""), description=msg.get("description", ""))
-        # новую сцену кладём в активный сценарий (если есть) — «создать сцену в сценарии»
-        sc = room.scenarios.get(room.active_scenario_id)
-        if sc is not None:
-            sc.setdefault("sceneIds", []).append(sid)
-            if not sc.get("activeSceneId"):
-                sc["activeSceneId"] = sid
-            await room.broadcast({"type": "scenario.list", **room.scenario_list()})
+        if not scenario.get("activeSceneId"):
+            scenario["activeSceneId"] = sid
+        await room.broadcast({"type": "scenario.list", **room.scenario_list()})
         await room.broadcast({"type": "scene.list", **room.scene_list()})
         room.persist_tokens()
         return
 
-    # --- сценарии (gm-only): именованные наборы сцен внутри игры ---
+    # --- сценарии (gm-only): слой между миром и сценами; сцены вложены внутрь ---
     if mtype == "scenario.create":
         if not require_gm(room.members.get(member_id)):
             return
-        sid = "scenario_" + secrets.token_hex(3)
-        room.scenarios[sid] = {"id": sid, "name": msg.get("name") or "Новый сценарий",
-                               "description": msg.get("description", ""), "sceneIds": [], "activeSceneId": None}
+        scid = "scenario_" + secrets.token_hex(3)
+        room.scenarios[scid] = new_scenario(scid, msg.get("name") or "Новый сценарий")
         if not room.active_scenario_id:
-            room.active_scenario_id = sid
+            room.active_scenario_id = scid
         await room.broadcast({"type": "scenario.list", **room.scenario_list()})
         room.persist_tokens()
         return
@@ -634,18 +723,22 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
             return
         sc = room.scenarios.get(msg.get("scenarioId"))
         sid = msg.get("sceneId")
-        if not sc or sid not in room.scenes:
+        if not sc:
             return
-        ids = sc.setdefault("sceneIds", [])
-        if mtype == "scenario.addScene":
-            if sid not in ids:
-                ids.append(sid)
-        else:
-            if sid in ids:
-                ids.remove(sid)
+        # В новой модели сцена принадлежит ровно одному сценарию (общего пула нет):
+        # addScene — нечего добавлять, тихо игнорируем; removeScene — удаляет сцену.
+        if mtype == "scenario.removeScene" and sid in sc["scenes"]:
+            del sc["scenes"][sid]
             if sc.get("activeSceneId") == sid:
-                sc["activeSceneId"] = ids[0] if ids else None
+                sc["activeSceneId"] = next(iter(sc["scenes"]), None)
+            # если удалили активную сцену активного сценария — переключиться
+            if room.active_scenario_id == sc["id"] and room.active_scene_id == sid:
+                room.active_scene_id = sc.get("activeSceneId")
+                room.ensure_scene()
+                await room.broadcast({"type": "scene.switched", "sceneId": room.active_scene_id,
+                                      "state": room.scene_state(room.active_scene_id)})
         await room.broadcast({"type": "scenario.list", **room.scenario_list()})
+        await room.broadcast({"type": "scene.list", **room.scene_list()})
         room.persist_tokens()
         return
 
@@ -656,12 +749,12 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
         if not sc:
             return
         room.active_scenario_id = sc["id"]
+        room.active_scene_id = sc.get("activeSceneId")
+        room.ensure_scene()                    # гарантирует сцену в сценарии + валидный active
         await room.broadcast({"type": "scenario.list", **room.scenario_list()})
-        # сразу переключиться на текущую сцену сценария, если есть
-        target = sc.get("activeSceneId")
-        if target in room.scenes:
-            room.active_scene_id = target
-            await room.broadcast({"type": "scene.switched", "sceneId": target, "state": room.scene_state(target)})
+        await room.broadcast({"type": "scene.list", **room.scene_list()})
+        await room.broadcast({"type": "scene.switched", "sceneId": room.active_scene_id,
+                              "state": room.scene_state(room.active_scene_id)})
         room.persist_tokens()
         return
 
@@ -669,13 +762,10 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
         if not require_gm(room.members.get(member_id)):
             return
         sid = msg.get("sceneId")
-        if sid not in room.scenes:
+        if sid not in room.active_scenes():
             return
         room.active_scene_id = sid
-        # активный сценарий помнит свою текущую сцену
-        sc = room.scenarios.get(room.active_scenario_id)
-        if sc and sid in sc.get("sceneIds", []):
-            sc["activeSceneId"] = sid
+        room.active_scenario()["activeSceneId"] = sid   # сценарий помнит свою сцену
         await room.broadcast({"type": "scene.switched", "sceneId": sid, "state": room.scene_state(sid)})
         await room.broadcast({"type": "scene.list", **room.scene_list()})
         room.persist_tokens()
@@ -684,7 +774,7 @@ async def handle(room: Room, member_id: str, role: str, msg: dict):
     if mtype == "scene.config":
         if not require_gm(room.members.get(member_id)):
             return
-        s = room.scenes.get(msg.get("sceneId"))
+        s = room.active_scenes().get(msg.get("sceneId"))
         if not s:
             return
         # обновляем только переданные поля (как map/grid)
